@@ -1,0 +1,104 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Flourishing",
+  "projectDescription": "Mathematical models and empirical analysis of the general factor of human flourishing (f-factor) based on PERMA+H framework",
+  "theme": "palm",
+  "primaryColor": "#9B59B6",
+  "lightColor": "#BB8FCE",
+  "darkColor": "#6C3483",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "concepts/f-factor",
+              "concepts/perma-framework",
+              "concepts/mathematical-models",
+              "concepts/data-sources"
+            ]
+          },
+          {
+            "group": "Analysis Pipeline",
+            "pages": [
+              "pipeline/data-download",
+              "pipeline/wellbeing-analysis",
+              "pipeline/full-models",
+              "pipeline/individual-level"
+            ]
+          },
+          {
+            "group": "Models",
+            "pages": [
+              "models/bifactor-cfa",
+              "models/mutualism-dynamics",
+              "models/lyapunov-stability",
+              "models/capabilities-adjusted"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/running-analysis",
+              "guides/interpreting-results",
+              "guides/visualization",
+              "guides/extending-models"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Scripts",
+            "pages": [
+              "api/download-data",
+              "api/analyze-wellbeing",
+              "api/full-models",
+              "api/individual-analysis"
+            ]
+          },
+          {
+            "group": "Core Functions",
+            "pages": [
+              "api/data-loading",
+              "api/statistical-methods",
+              "api/plotting",
+              "api/model-calibration"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Four mathematical models of human flourishing (bifactor CFA, mutualism, Lyapunov stability, capabilities-adjusted)",
+    "Country-level wellbeing data analysis from World Happiness Report, OECD BLI, and World Bank",
+    "Individual-level replication using MIDUS psychological wellbeing data",
+    "PCA-based f-factor extraction with bootstrap confidence intervals",
+    "Mutualism dynamical system demonstrating positive manifold without latent variables",
+    "Lyapunov stability and resilience analysis for wellbeing equilibria",
+    "Comprehensive visualization suite for correlations, factor loadings, and trajectories"
+  ],
+  "publicApiSurface": [
+    "01_download_wellbeing_data.py - Data acquisition pipeline for WHR, OECD BLI, World Bank indicators",
+    "02_analyze_wellbeing_f.py - PCA extraction of f-factor from country-level data",
+    "03_models_full_f.py - Complete implementation of bifactor CFA, mutualism, Lyapunov, capabilities models",
+    "04_individual_level_f_analysis.py - Individual-level replication with MIDUS Ryff wellbeing scales",
+    "MutualismSystem class - Coupled logistic growth ODEs for wellbeing dynamics",
+    "fit_bifactor_cfa() - Maximum likelihood bifactor confirmatory factor analysis",
+    "lyapunov_analysis() - Stability and resilience computation at equilibrium",
+    "compute_capabilities_adjusted_f() - Nussbaum threshold and Alkire-Foster deprivation scoring"
+  ]
+}
