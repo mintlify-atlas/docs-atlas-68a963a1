@@ -13,7 +13,7 @@ The bifactor CFA (Confirmatory Factor Analysis) model is the first mathematical 
 
 Each observed wellbeing indicator is modeled as:
 
-```
+```text
 y_ij = μ_j + λ_j^f · f_i + λ_j^sk · s_ki + ε_ij
 ```
 
@@ -29,7 +29,7 @@ Where:
 
 The bifactor model produces a covariance matrix:
 
-```
+```text
 Σ = Λ_f Λ_f' + Λ_s Λ_s' + Θ
 ```
 
@@ -52,7 +52,7 @@ The model groups six PERMA+H indicators into three domain-specific factors:
 
 The model parameters are estimated by minimizing the ML discrepancy function:
 
-```
+```text
 F_ML = log|Σ(θ)| + tr(S · Σ(θ)⁻¹) - log|S| - p
 ```
 

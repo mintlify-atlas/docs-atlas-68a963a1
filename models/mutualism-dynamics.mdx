@@ -17,7 +17,7 @@ This is a crucial theoretical insight: the positive manifold in wellbeing data d
 
 Each wellbeing domain k evolves according to:
 
-```
+```text
 dx_k/dt = a_k · x_k · (1 - x_k/C_k + Σ_{l≠k} M_kl · x_l / C_k) + σ_k · ξ_k(t)
 ```
 
@@ -60,12 +60,12 @@ The term `Σ_{l≠k} M_kl · x_l / C_k` represents **mutual support**:
 
 At equilibrium (dx_k/dt = 0, x_k > 0), the growth equation reduces to:
 
-```
+```text
 1 - x_k/C_k + Σ_{l≠k} M_kl · x_l / C_k = 0
 ```
 
 Rearranging:
-```
+```text
 x_k = C_k + Σ_{l≠k} M_kl · x_l
 ```
 
@@ -73,7 +73,7 @@ x_k = C_k + Σ_{l≠k} M_kl · x_l
 
 Define M̃ where M̃_kl = M_kl for k≠l and 0 on diagonal. Then:
 
-```
+```text
 (I - M̃) x* = C
 x* = (I - M̃)⁻¹ C
 ```

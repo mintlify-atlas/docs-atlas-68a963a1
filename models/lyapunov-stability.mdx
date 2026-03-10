@@ -18,7 +18,7 @@ Lyapunov stability analysis (Model 3) provides a rigorous mathematical framework
 
 Near equilibrium x*, the dynamics are approximately linear:
 
-```
+```text
 dδx/dt ≈ J · δx
 ```
 
@@ -31,12 +31,12 @@ Where:
 For the mutualism system, the Jacobian is:
 
 **Diagonal elements (k = l):**
-```
+```text
 J_kk = a_k · (1 - 2x*_k/C_k + Σ_{l≠k} M_kl · x*_l / C_k)
 ```
 
 **Off-diagonal elements (k ≠ l):**
-```
+```text
 J_kl = a_k · x*_k · M_kl / C_k
 ```
 
