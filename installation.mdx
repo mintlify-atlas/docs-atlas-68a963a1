@@ -1,0 +1,389 @@
+---
+title: Installation
+description: Set up your Python environment for f-factor analysis
+---
+
+## Requirements
+
+This implementation requires Python 3.8 or higher. The scripts are tested on:
+
+- Python 3.8, 3.9, 3.10, 3.11
+- Linux, macOS, and Windows
+
+<Warning>
+  Python 3.7 and earlier are not supported due to type hinting syntax and dependencies requiring newer Python versions.
+</Warning>
+
+## Core Dependencies
+
+All scripts require these core scientific Python packages:
+
+<CodeGroup>
+
+```bash pip
+pip install numpy pandas scipy scikit-learn matplotlib seaborn requests
+```
+
+```bash conda
+conda install numpy pandas scipy scikit-learn matplotlib seaborn requests
+```
+
+</CodeGroup>
+
+### Package Versions
+
+The implementation is tested with:
+
+| Package | Minimum Version | Purpose |
+|---------|----------------|----------|
+| `numpy` | 1.20.0 | Array operations, linear algebra |
+| `pandas` | 1.3.0 | Data manipulation and CSV I/O |
+| `scipy` | 1.7.0 | Statistical tests, optimization, Lyapunov equations |
+| `scikit-learn` | 1.0.0 | PCA, StandardScaler, model evaluation |
+| `matplotlib` | 3.4.0 | Visualization, plotting |
+| `seaborn` | 0.11.0 | Statistical visualizations, heatmaps |
+| `requests` | 2.26.0 | HTTP requests for data download |
+
+## Optional Dependencies
+
+For advanced analyses (Model 1: Bifactor CFA):
+
+<CodeGroup>
+
+```bash pip
+pip install semopy
+```
+
+```bash conda
+conda install -c conda-forge semopy
+```
+
+</CodeGroup>
+
+<Note>
+  **semopy** is optional. If not installed, the bifactor CFA in Model 1 will be skipped, but PCA-based f-factor extraction still works. The PCA approach (`02_analyze_wellbeing_f.py`) provides a robust f-proxy even without CFA.
+</Note>
+
+## Installation Methods
+
+### Method 1: Virtual Environment (Recommended)
+
+Create an isolated environment for the project:
+
+<CodeGroup>
+
+```bash pip + venv
+# Create virtual environment
+python -m venv flourishing-env
+
+# Activate (Linux/Mac)
+source flourishing-env/bin/activate
+
+# Activate (Windows)
+flourishing-env\\Scripts\\activate
+
+# Install dependencies
+pip install --upgrade pip
+pip install numpy pandas scipy scikit-learn matplotlib seaborn requests
+
+# Optional: Install semopy for bifactor CFA
+pip install semopy
+```
+
+```bash conda
+# Create conda environment
+conda create -n flourishing python=3.10 numpy pandas scipy scikit-learn matplotlib seaborn requests
+
+# Activate
+conda activate flourishing
+
+# Optional: Install semopy
+conda install -c conda-forge semopy
+```
+
+</CodeGroup>
+
+### Method 2: System-Wide Installation
+
+Install packages globally (not recommended for production):
+
+```bash
+pip install --user numpy pandas scipy scikit-learn matplotlib seaborn requests
+```
+
+### Method 3: Using requirements.txt
+
+Create a `requirements.txt` file:
+
+```txt requirements.txt
+numpy>=1.20.0
+pandas>=1.3.0
+scipy>=1.7.0
+scikit-learn>=1.0.0
+matplotlib>=3.4.0
+seaborn>=0.11.0
+requests>=2.26.0
+
+# Optional for bifactor CFA
+semopy>=2.3.0
+```
+
+Install all at once:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Verify Installation
+
+Run this verification script to check all dependencies:
+
+```python verify_install.py
+import sys
+
+print(f"Python version: {sys.version}")
+print("\nChecking core dependencies...\n")
+
+packages = {
+    "numpy": "1.20.0",
+    "pandas": "1.3.0",
+    "scipy": "1.7.0",
+    "sklearn": "1.0.0",
+    "matplotlib": "3.4.0",
+    "seaborn": "0.11.0",
+    "requests": "2.26.0",
+}
+
+optional = {"semopy": "2.3.0"}
+
+all_ok = True
+
+for package, min_ver in packages.items():
+    try:
+        if package == "sklearn":
+            import sklearn
+            version = sklearn.__version__
+        else:
+            mod = __import__(package)
+            version = mod.__version__
+        print(f"✓ {package:<15} {version:<10} (min: {min_ver})")
+    except ImportError:
+        print(f"✗ {package:<15} NOT FOUND (required)")
+        all_ok = False
+
+print("\nChecking optional dependencies...\n")
+for package, min_ver in optional.items():
+    try:
+        mod = __import__(package)
+        version = mod.__version__
+        print(f"✓ {package:<15} {version:<10} (for bifactor CFA)")
+    except ImportError:
+        print(f"⚠ {package:<15} NOT FOUND (optional, needed for Model 1 bifactor CFA)")
+
+if all_ok:
+    print("\n✓ All required packages installed successfully!")
+    print("  You're ready to run the f-factor analysis.")
+else:
+    print("\n✗ Some required packages are missing. Install them with:")
+    print("  pip install numpy pandas scipy scikit-learn matplotlib seaborn requests")
+```
+
+Run it:
+
+```bash
+python verify_install.py
+```
+
+**Expected output:**
+
+```
+Python version: 3.10.8 (main, Nov 24 2022, 14:13:03)
+
+Checking core dependencies...
+
+✓ numpy           1.24.1     (min: 1.20.0)
+✓ pandas          1.5.2      (min: 1.3.0)
+✓ scipy           1.10.0     (min: 1.7.0)
+✓ sklearn         1.2.0      (min: 1.0.0)
+✓ matplotlib      3.6.2      (min: 3.4.0)
+✓ seaborn         0.12.1     (min: 0.11.0)
+✓ requests        2.28.1     (min: 2.26.0)
+
+Checking optional dependencies...
+
+✓ semopy          2.3.10     (for bifactor CFA)
+
+✓ All required packages installed successfully!
+  You're ready to run the f-factor analysis.
+```
+
+## Data Access Requirements
+
+### Country-Level Data (Scripts 01-03)
+
+**No registration required.** Data is automatically downloaded from public repositories:
+
+- **World Happiness Report 2024**: GitHub mirror (Escavine/World-Happiness)
+- **OECD Better Life Index**: GitHub datasets repository
+- **World Bank Open Data API**: Public API, no authentication
+
+The scripts handle all downloads automatically when you run `01_download_wellbeing_data.py`.
+
+### Individual-Level Data (Script 04)
+
+**ICPSR registration required.** The MIDUS data requires a free ICPSR account:
+
+<Steps>
+  <Step title="Create ICPSR account">
+    Register at [https://www.icpsr.umich.edu/web/pages/ICPSR/](https://www.icpsr.umich.edu/web/pages/ICPSR/)
+  </Step>
+  <Step title="Navigate to MIDUS 2 study">
+    Go to study page: [https://www.icpsr.umich.edu/web/NACDA/studies/4652](https://www.icpsr.umich.edu/web/NACDA/studies/4652)
+  </Step>
+  <Step title="Download the data">
+    - Click "Download"
+    - Select **"Delimited"** format (produces `.tsv` files)
+    - Agree to ICPSR terms (standard public use agreement)
+    - Download **"DS0001: Main Data"**
+  </Step>
+  <Step title="Place file in project directory">
+    Unzip and place the `.tsv` file at:
+    ```
+    04652-0001-Data.tsv
+    ```
+    Or update `MIDUS_DATA_PATH` in `04_individual_level_f_analysis.py`.
+  </Step>
+</Steps>
+
+<Note>
+  **Alternative:** Set `MODE = "synthetic"` in script 04 to generate simulated MIDUS-like data for testing without downloading the real dataset.
+</Note>
+
+## Directory Structure
+
+After installation, set up this directory structure:
+
+```
+flourishing/
+├── 01_download_wellbeing_data.py
+├── 02_analyze_wellbeing_f.py
+├── 03_models_full_f.py
+├── 04_individual_level_f_analysis.py
+├── wellbeing_data/              # Created automatically
+│   ├── WHR2024_raw.csv           # Downloaded by script 01
+│   ├── oecd_bli_raw.csv
+│   ├── worldbank_raw.csv
+│   ├── wellbeing_merged.csv      # Output of script 01
+│   ├── wellbeing_scored.csv      # Output of script 02
+│   └── midus_scored.csv          # Output of script 04
+├── wellbeing_figures/           # Created automatically
+│   ├── 01_correlation_matrix.png
+│   ├── 02_scree_plot.png
+│   ├── 03_factor_loadings.png
+│   └── ...
+└── wellbeing_figures_individual/ # Created automatically
+    ├── indiv_01_correlation_matrix.png
+    ├── indiv_02_scree.png
+    └── ...
+```
+
+The `wellbeing_data/` and figure directories are created automatically when you run the scripts.
+
+## Platform-Specific Notes
+
+<AccordionGroup>
+  <Accordion title="Windows">
+    - Use Anaconda or Miniconda for easier dependency management
+    - If using pip, ensure you have Microsoft C++ Build Tools for scipy/numpy compilation
+    - Path separators: use `Path()` objects (already handled in scripts) or raw strings `r"path\\to\\file"`
+  </Accordion>
+
+  <Accordion title="macOS">
+    - Use Homebrew Python (`brew install python`) or conda
+    - M1/M2 Macs: Install scipy via conda to avoid compilation issues
+    - matplotlib may require additional backend setup: `pip install pyqt5`
+  </Accordion>
+
+  <Accordion title="Linux">
+    - Install system dependencies first:
+      ```bash
+      # Ubuntu/Debian
+      sudo apt-get install python3-dev python3-pip
+
+      # RHEL/CentOS
+      sudo yum install python3-devel python3-pip
+      ```
+    - For headless servers (no display), set matplotlib backend:
+      ```python
+      import matplotlib
+      matplotlib.use('Agg')
+      ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="scipy installation fails">
+    scipy requires a Fortran compiler. Solutions:
+
+    **Option 1:** Use conda (includes pre-compiled binaries):
+    ```bash
+    conda install scipy
+    ```
+
+    **Option 2:** Install build tools:
+    - **Windows:** Install Visual Studio Build Tools
+    - **macOS:** `xcode-select --install`
+    - **Linux:** `sudo apt-get install gfortran`
+  </Accordion>
+
+  <Accordion title="matplotlib displays no plots">
+    If running on a server without X11:
+
+    ```python
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    import matplotlib.pyplot as plt
+    ```
+
+    Or set environment variable before running:
+    ```bash
+    export MPLBACKEND=Agg
+    python 02_analyze_wellbeing_f.py
+    ```
+  </Accordion>
+
+  <Accordion title="Import error: No module named 'sklearn'">
+    The package name is `scikit-learn` but imports as `sklearn`:
+
+    ```bash
+    pip install scikit-learn  # NOT pip install sklearn
+    ```
+  </Accordion>
+
+  <Accordion title="semopy installation fails">
+    semopy is optional. Skip it for now - PCA-based f extraction still works.
+
+    If you need bifactor CFA:
+    ```bash
+    # Try conda-forge channel
+    conda install -c conda-forge semopy
+
+    # Or install dependencies first
+    pip install numba scipy pandas
+    pip install semopy
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Extract your first f-factor in 5 minutes
+  </Card>
+  <Card title="Full Documentation" icon="book" href="/pipeline/data-download">
+    Explore all four models in depth
+  </Card>
+</CardGroup>

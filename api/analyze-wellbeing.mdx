@@ -1,0 +1,266 @@
+---
+title: 'analyze_wellbeing_f'
+description: 'Analyze wellbeing data to extract the general factor of flourishing'
+---
+
+# Analyze Wellbeing f-Factor
+
+Analyzes merged wellbeing dataset to empirically extract the general factor of flourishing (f) and characterize the positive manifold.
+
+## Configuration Constants
+
+```python
+DATA_PATH = Path("wellbeing_data/wellbeing_merged.csv")
+OUTPUT_DIR = Path("wellbeing_figures")
+BOOTSTRAP_N = 1000
+```
+
+### PERMA+H Columns
+
+```python
+PERMA_COLS = [
+    "P_positive_emotion",
+    "E_engagement_autonomy",
+    "R_relationships",
+    "M_meaning_life_sat",
+    "A_accomplishment_gdp",
+    "H_health",
+]
+```
+
+### Display Labels
+
+```python
+PERMA_LABELS = {
+    "P_positive_emotion":    "P  Positive emotion\n(Positive affect)",
+    "E_engagement_autonomy": "E  Engagement\n(Autonomy / freedom)",
+    "R_relationships":       "R  Relationships\n(Social support)",
+    "M_meaning_life_sat":    "M  Meaning\n(Cantril ladder)",
+    "A_accomplishment_gdp":  "A  Accomplishment\n(Log GDP/capita)",
+    "H_health":              "H  Health\n(Healthy life expect.)",
+}
+```
+
+## Core Functions
+
+### load_data()
+
+Loads and preprocesses the merged wellbeing dataset.
+
+**Returns:** `tuple[pd.DataFrame, pd.DataFrame, np.ndarray, list]`
+
+- `df_full` — Full dataset with all columns
+- `df_clean` — Rows with all 6 PERMA+H values present
+- `X_scaled` — Standardized PERMA+H matrix (N × 6)
+- `present` — List of present column names
+
+**Example:**
+```python
+df_full, df_clean, X_scaled, present = load_data()
+print(f"Complete cases: {len(df_clean)}")
+```
+
+---
+
+### run_pca()
+
+Runs PCA to extract f as PC1.
+
+<ParamField path="X" type="np.ndarray" required>
+  Standardized PERMA+H matrix (N × 6)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  List of PERMA+H column names
+</ParamField>
+
+**Returns:** `tuple[PCA, np.ndarray, np.ndarray, np.ndarray, np.ndarray]`
+
+- `pca` — Fitted PCA object
+- `scores` — PC scores (N × 6)
+- `loadings` — Factor loadings (6 × 6), PC1 = f
+- `eigenvalues` — Eigenvalues
+- `var_ratio` — Variance explained ratios
+
+**Sign fixing:** Automatically ensures PC1 loadings have correct sign (positive loadings = higher flourishing) by anchoring to M_meaning_life_sat.
+
+**Example:**
+```python
+pca, scores, loadings, eigenvalues, var_ratio = run_pca(X_scaled, present_cols)
+print(f"PC1 explains {var_ratio[0]*100:.1f}% of variance")
+```
+
+---
+
+### bootstrap_loadings()
+
+Bootstraps PC1 loadings to get 95% confidence intervals.
+
+<ParamField path="X" type="np.ndarray" required>
+  Standardized PERMA+H matrix (N × 6)
+</ParamField>
+
+<ParamField path="n_boot" type="int" default={1000}>
+  Number of bootstrap iterations
+</ParamField>
+
+**Returns:** `np.ndarray`
+
+Bootstrap loadings array (n_boot × 6). Sign is fixed to match original loading direction.
+
+**Example:**
+```python
+boot_L = bootstrap_loadings(X_scaled, n_boot=1000)
+ci_lo = np.percentile(boot_L, 2.5, axis=0)
+ci_hi = np.percentile(boot_L, 97.5, axis=0)
+```
+
+---
+
+### compute_f_scores()
+
+Computes f-scores for each country.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Clean DataFrame with country names
+</ParamField>
+
+<ParamField path="scores" type="np.ndarray" required>
+  PC scores from run_pca()
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  List of PERMA+H column names
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with added columns:
+- `f_score` — Raw PC1 score
+- `f_z` — Standardized f-score (mean=0, std=1)
+
+Sorted by `f_z` descending.
+
+**Example:**
+```python
+df_scored = compute_f_scores(df_clean, scores, present_cols)
+print(df_scored.head(10)[["country", "f_z"]])
+```
+
+## Visualization Functions
+
+### plot_correlation_matrix()
+
+Creates heatmap of Pearson correlations among PERMA+H dimensions.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Clean DataFrame
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  PERMA+H column names
+</ParamField>
+
+**Returns:** `plt.Figure`
+
+Heatmap showing the "positive manifold" — every off-diagonal cell should be positive.
+
+**Example:**
+```python
+fig = plot_correlation_matrix(df_clean, present_cols)
+fig.savefig("correlation_matrix.png")
+```
+
+---
+
+### plot_scree()
+
+Creates scree plot showing eigenvalue decomposition.
+
+<ParamField path="eigenvalues" type="np.ndarray" required>
+  Eigenvalues from PCA
+</ParamField>
+
+<ParamField path="var_ratio" type="np.ndarray" required>
+  Variance explained ratios
+</ParamField>
+
+**Returns:** `plt.Figure`
+
+Two-panel figure:
+- Left: Scree plot with Kaiser criterion (λ = 1)
+- Right: Cumulative variance explained
+
+**Example:**
+```python
+fig = plot_scree(eigenvalues, var_ratio)
+fig.savefig("scree_plot.png")
+```
+
+---
+
+### plot_factor_loadings()
+
+Creates horizontal bar chart of PC1 loadings with 95% bootstrap CIs.
+
+<ParamField path="loadings" type="np.ndarray" required>
+  Factor loadings from run_pca()
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  PERMA+H column names
+</ParamField>
+
+<ParamField path="boot_loadings" type="np.ndarray" required>
+  Bootstrap loadings from bootstrap_loadings()
+</ParamField>
+
+**Returns:** `plt.Figure`
+
+Bar chart showing how strongly each dimension loads on f. Larger loading = dimension more strongly reflects f.
+
+**Example:**
+```python
+fig = plot_factor_loadings(loadings, present_cols, boot_L)
+fig.savefig("factor_loadings.png")
+```
+
+## Analysis Workflow
+
+The script performs the following steps:
+
+1. **Load** wellbeing_data/wellbeing_merged.csv
+2. **Select** the 6 PERMA+H columns; drop missing values
+3. **Standardize** all dimensions (z-score)
+4. **Compute** correlation matrix (positive manifold test)
+5. **Run PCA**:
+   - Scree plot (eigenvalue decomposition)
+   - Factor loadings on PC1 = empirical f
+   - Cumulative explained variance
+6. **Score** each country on f (PC1 projection)
+7. **Plot** top-20 / bottom-20 countries by f
+8. **Create** scatter matrix of all PERMA+H pairs
+9. **Examine** coupling asymmetry (stability proxy)
+
+## Output Files
+
+The script produces figures in `wellbeing_figures/`:
+
+- `01_correlation_matrix.png` — Positive manifold heatmap
+- `02_scree_plot.png` — Eigenvalue decomposition
+- `03_factor_loadings.png` — PC1 loadings with CIs
+- `04_country_f_scores.png` — Top/bottom countries
+- `05_f_distribution.png` — Distribution of f-scores
+- `06_scatter_matrix.png` — All pairwise relationships
+- `07_coupling_proxy.png` — Partial correlations
+
+And data file:
+- `wellbeing_data/wellbeing_scored.csv` — Countries with f-scores
+
+## Methodological Notes
+
+- PCA is exploratory. A proper bifactor CFA would use a confirmatory model
+- Standard errors on loadings are bootstrapped (n=1000, 95% CI)
+- Data are country-level averages, not individual responses
+- The positive manifold observed is an **ecological correlation**
+- omega_h estimation requires bifactor CFA; variance explained by PC1 serves as direct analogue

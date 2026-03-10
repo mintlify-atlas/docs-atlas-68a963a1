@@ -1,0 +1,483 @@
+---
+title: Interpreting Results
+description: Understanding correlation matrices, factor loadings, f-scores, omega_h, and resilience metrics
+---
+
+This guide explains how to read and interpret the key outputs from the f-factor analysis.
+
+## Correlation Matrix
+
+### What to Look For
+
+The correlation matrix tests the **positive manifold** — the foundational requirement for a general factor.
+
+**Key metrics:**
+- **Mean off-diagonal r:** Average correlation across all pairs (expect 0.50-0.80 for country data)
+- **Minimum r:** Weakest correlation (should be > 0)
+- **All positive:** ✓ confirms positive manifold
+
+<Accordion title="Example: Reading the Correlation Matrix">
+
+```
+Off-diagonal correlations: 15 pairs
+Positive:  15 (100%)
+Mean r:    0.723
+Min r:     0.542  (E_engagement_autonomy ↔ P_positive_emotion)
+Max r:     0.891  (M_meaning_life_sat ↔ H_health)
+✓ Full positive manifold confirmed.
+```
+
+**Interpretation:**
+- ✓ All 15 pairwise correlations are positive → positive manifold confirmed
+- Mean r = 0.723 is strong (for country-level data, 0.60-0.80 is typical)
+- Weakest pair is Engagement-Emotion (0.542) → these are most distinct
+- Strongest pair is Meaning-Health (0.891) → near-perfect alignment
+
+**Implications:**
+- Countries high on one wellbeing dimension tend to be high on all others
+- This structure is **necessary but not sufficient** for a general factor
+- PCA will confirm whether correlations are explained by a single dominant component
+
+</Accordion>
+
+<Accordion title="What if Some Correlations Are Negative?">
+
+**⚠ Warning sign.** Possible causes:
+
+1. **Variable coding error:** Check that all variables point in the same direction (higher = better)
+   - Example: "Perceptions of corruption" should be *reversed* (lower = better)
+   
+2. **Wrong variable selection:** A measure might not belong to the flourishing construct
+   - Example: GDP alone may not correlate with positive affect in rich countries
+
+3. **Outliers:** A few extreme countries can flip correlations
+   - Check: Sort data by each dimension, identify countries > 3 SD from mean
+
+**Action:** Re-examine variable mappings in `01_download_wellbeing_data.py`.
+
+</Accordion>
+
+## PC1 Variance Explained
+
+### What It Means
+
+**PC1 variance = proportion of total variance explained by the first principal component.**
+
+This is the empirical strength of the general factor f.
+
+<CodeGroup>
+```text Typical Ranges
+Individual-level:  45-60%  (e.g., MIDUS Ryff subscales)
+Country-level:     65-85%  (e.g., WHR aggregated data)
+Item-level:        30-45%  (e.g., 42-item Ryff raw items)
+```
+</CodeGroup>
+
+### Interpretation Guidelines
+
+| PC1 Variance | Interpretation |
+|--------------|----------------|
+| < 40% | Weak general factor. Domain-specific factors may dominate. |
+| 40-60% | Moderate f. Typical for **individual-level** wellbeing data. |
+| 60-80% | Strong f. Typical for **country-level** aggregated data. |
+| > 80% | Very strong f, or **ecological inflation** (aggregation artifact). |
+
+<Warning>
+**Country-level data inflates correlations** through ecological aggregation. A country average removes within-country variance, making dimensions appear more correlated than they are for individuals.
+
+This is **Simpson's paradox** in action. Always interpret country-level PC1 variance with this caveat.
+</Warning>
+
+### Example Output
+
+```
+PC1 (f) accounts for 68.3% of total variance
+PC1 eigenvalue: 4.097  (Kaiser criterion > 1: ✓)
+```
+
+**Interpretation:**
+- **68.3%:** Strong general factor at country level
+- **Eigenvalue = 4.097:** Dominant (Kaiser rule: keep components with λ > 1)
+- If eigenvalue > number of variables / 2, f is the dominant organizing principle
+
+<Accordion title="Why Does Individual-Level f Have Lower Variance?">
+
+**Within-person noise:**
+- People vary in life circumstances, measurement error, response styles
+- A person can be high on Relationships but low on Health due to illness
+- Random life events create short-term fluctuations
+
+**Country aggregates smooth this out:**
+- Averaging 1000+ people per country cancels individual noise
+- Only systematic cross-country differences remain
+- This creates artificially high correlations
+
+**Implication:** Individual-level f (50-60% variance) is the **true** structural estimate. Country-level f (70%+) overestimates due to aggregation.
+
+</Accordion>
+
+## Factor Loadings
+
+### What They Are
+
+Loadings = **correlations between each dimension and f (PC1)**.
+
+Range: -1 to +1 (in practice: 0.30 to 0.60 for wellbeing data)
+
+### How to Read Loadings
+
+<Accordion title="Example: Factor Loadings with Bootstrap CIs">
+
+```
+PC1 Loadings with 95% Bootstrap CI:
+  P: Positive Emotion          0.398  [0.312, 0.472]
+  E: Engagement (Autonomy)     0.405  [0.335, 0.463]
+  R: Relationships             0.423  [0.368, 0.475]
+  M: Meaning (Life Sat.)       0.431  [0.382, 0.477]  ← Highest
+  A: Accomplishment (GDP)      0.387  [0.318, 0.448]
+  H: Health                    0.420  [0.362, 0.471]
+```
+
+**Interpretation:**
+
+1. **All loadings positive** → All dimensions contribute to f in the same direction
+
+2. **Meaning (0.431) loads highest** → Life satisfaction is the purest f indicator
+   - Makes sense: Cantril ladder directly asks about overall life evaluation
+   
+3. **Accomplishment (0.387) loads lowest** → GDP is the weakest f indicator
+   - Makes sense: Rich countries can still have low subjective wellbeing
+   
+4. **Narrow CIs** → Loadings are stable (low sampling variability)
+   - Width ≈ 0.10-0.15 is typical for n=100+ countries
+
+5. **All loadings in 0.38-0.43 range** → Dimensions are roughly **equally weighted**
+   - This is the signature of a **broad general factor**
+   - No single dimension dominates
+
+</Accordion>
+
+### Communality vs Specificity
+
+**Communality (h²):** Variance in dimension explained by f
+- h² = (loading)²
+- Example: M_meaning loading = 0.431 → h² = 0.186 → 18.6% of Meaning variance is f
+
+**Specificity (1 - h²):** Unique variance not explained by f
+- Example: 1 - 0.186 = 0.814 → 81.4% of Meaning is domain-specific
+
+<Note>
+High specificity is **expected and healthy**. It means each dimension has unique information beyond f. 
+
+If h² > 0.90 for all dimensions, they're nearly identical (redundant measurement).
+</Note>
+
+## Country f-Scores
+
+### What They Represent
+
+**f-score = each country's projection onto PC1, z-standardized.**
+
+- Mean = 0, SD = 1
+- Positive f = above-average flourishing
+- Negative f = below-average flourishing
+
+### Ranking Interpretation
+
+<Accordion title="Top 10 Countries by f">
+
+```
+Top 10 countries by f:
+  Denmark                              f = +2.147
+  Finland                              f = +2.089
+  Norway                               f = +1.934
+  Iceland                              f = +1.876
+  Switzerland                          f = +1.823
+  Netherlands                          f = +1.697
+  Sweden                               f = +1.654
+  New Zealand                          f = +1.589
+  Austria                              f = +1.512
+  Luxembourg                           f = +1.478
+```
+
+**What this means:**
+- Denmark is **2.15 standard deviations above the mean** across all PERMA+H dimensions
+- Not necessarily #1 on every dimension, but consistently high on all
+- Nordic countries dominate due to balanced high performance (high R, low inequality)
+
+</Accordion>
+
+<Accordion title="Bottom 10 Countries by f">
+
+```
+Bottom 10 countries by f:
+  Afghanistan                          f = -2.341
+  South Sudan                          f = -2.198
+  Zimbabwe                             f = -2.067
+  Rwanda                               f = -1.934
+  Botswana                             f = -1.876
+  Lesotho                              f = -1.823
+  Sierra Leone                         f = -1.789
+  Tanzania                             f = -1.712
+  Malawi                               f = -1.654
+  Zambia                               f = -1.598
+```
+
+**Common factors:**
+- Conflict, poverty, health crises (HIV/AIDS in Southern Africa)
+- Low across **all** dimensions (not just GDP)
+- f captures multidimensional deprivation
+
+</Accordion>
+
+### What f-Score Differences Mean
+
+A **1-point difference** in f (z-score) is equivalent to:
+- 1 standard deviation across the composite of all 6 dimensions
+- Denmark (+2.15) vs. USA (+0.83) = 1.32 SD difference
+- Roughly the 90th percentile vs. 65th percentile in global distribution
+
+<Warning>
+**f-scores are relative rankings, not absolute levels.**
+
+- f = 0 means "average" among the countries in your sample (e.g., 137 WHR countries)
+- If you add more low-income countries, rich countries' f-scores will increase
+- Always report: "f relative to [sample description]"
+</Warning>
+
+## Omega Hierarchical (ω_h)
+
+### What It Is
+
+**omega_h = proportion of total variance in items explained by the general factor.**
+
+This is the **gold standard reliability metric** for bifactor models.
+
+### Interpretation Benchmarks
+
+<CodeGroup>
+```text Published Ranges (Paper)
+MHC-SF (14 items):           ω_h = 0.71-0.86
+Ryff PWB (18-42 items):      ω_h = 0.60-0.78
+Life satisfaction scales:     ω_h = 0.80-0.92
+```
+</CodeGroup>
+
+| ω_h Value | Interpretation |
+|-----------|----------------|
+| < 0.50 | Weak general factor. Domain-specific factors dominate. |
+| 0.50-0.70 | Moderate f. Domain specificity is substantial. |
+| 0.70-0.85 | Strong f. Most reliable variance is general. |
+| > 0.85 | Very strong f, or items are too homogeneous (redundant). |
+
+### Example Output
+
+```
+omega_h analogue (PC1 var / total var): 0.683
+Paper's empirical range: 0.71 – 0.86
+Note: country-level aggregate data tends to inflate this.
+```
+
+**Interpretation:**
+- ω_h = 0.683 is at the **lower bound** of paper's range
+- This is **expected** because we're using 6 broad subscales, not 14-42 items
+- Fewer indicators → lower omega_h (less redundancy)
+- Country-level aggregation partially offsets this
+
+<Accordion title="Why Is Omega_h Lower for Subscales Than Items?">
+
+**Items within a subscale are highly correlated** (they're designed to measure the same thing).
+- Example: Three "Positive Relations" items all ask about relationship quality
+- High item-level omega_h (0.85) means f dominates individual items
+
+**Subscales are more distinct:**
+- Autonomy subscale ≠ Health subscale (different constructs)
+- Lower subscale-level omega_h (0.65) means more domain-specific variance
+- This is **theoretically desirable** — proves dimensions aren't redundant
+
+**Rule of thumb:**
+- **Item-level omega_h:** 0.75-0.90 (want high — confirms items measure f)
+- **Subscale-level omega_h:** 0.60-0.80 (moderate is good — confirms dimensions have unique information)
+
+</Accordion>
+
+## Resilience Scores (Model 3)
+
+### What Resilience Means
+
+**Resilience = size of perturbations a system can absorb before leaving its basin of attraction.**
+
+In wellbeing terms:
+- **High resilience:** Country can withstand shocks (recession, pandemic) and return to equilibrium
+- **Low resilience:** Small shocks tip country into persistent decline
+
+### Key Metrics
+
+<Accordion title="Return Time (τ)">
+
+**τ = 1 / |Re(λ₁)| where λ₁ is the dominant eigenvalue of the Jacobian.**
+
+- Units: time to recover 63% of a perturbation (half-life analog)
+- Typical range: 5-20 (dimensionless time units)
+
+**Example:**
+```
+Return time τ = 12.4
+```
+
+If a country suffers a shock (e.g., 10% drop in Health), it takes **12.4 time units** to recover 63% of the way back. Full recovery (99%) takes ≈5τ = 62 units.
+
+**Interpretation by value:**
+- τ < 5: Very fast recovery (resilient system)
+- τ = 10-15: Moderate recovery speed
+- τ > 20: Slow recovery (vulnerable system)
+- τ → ∞: System is at a tipping point (neutral stability)
+
+</Accordion>
+
+<Accordion title="Basin Depth (R)">
+
+**R = 1 / √λ_max(P) where P solves the Lyapunov equation J'P + PJ = -Q.**
+
+- Measures size of perturbations system can absorb
+- Typical range: 0.01-0.20
+
+**Example:**
+```
+Resilience R(x*) ≈ 0.083
+```
+
+A perturbation of magnitude > 0.083 (in standardized units) may push the system out of its basin.
+
+**Interpretation:**
+- Small R → shallow basin → easily tipped
+- Large R → deep basin → robust to shocks
+
+</Accordion>
+
+### Resilience vs f Correlation
+
+<Accordion title="Expected Relationship">
+
+**Theory predicts: r(f, resilience) > 0**
+
+Higher f → stronger mutualistic coupling → deeper basin → more resilient.
+
+**Example output:**
+```
+(a) f vs Resilience
+r = 0.412, p = 2.3e-06
+```
+
+**Interpretation:**
+- Positive correlation confirms theoretical prediction
+- r = 0.412 → 17% shared variance (moderate effect)
+- Countries with high f are **significantly more resilient** to shocks
+- But 83% of resilience variance is independent (other factors matter)
+
+**Practical implication:** Investing in broad wellbeing (raising f) has a side benefit of increasing systemic resilience.
+
+</Accordion>
+
+## When Results Indicate Problems
+
+### Red Flags
+
+<AccordionGroup>
+
+<Accordion title="1. Negative correlations in the manifold">
+
+**Diagnostic:**
+```
+Min r:     -0.123  ✗ some negative
+```
+
+**Action:**
+1. Check variable coding (reverse-scored items)
+2. Inspect outlier countries (plot scatter of the negative pair)
+3. Verify data source hasn't changed column meanings
+
+</Accordion>
+
+<Accordion title="2. PC1 variance < 40%">
+
+**Diagnostic:**
+```
+PC1 (f) accounts for 38.2% of total variance
+```
+
+**Possible causes:**
+- Weak general factor (domain-specific factors dominate)
+- Wrong variables selected (not all measuring flourishing)
+- High measurement error
+
+**Action:**
+1. Check scree plot: Is there a clear elbow after PC1?
+2. Run bifactor CFA: Are specific factors stronger than general?
+3. Consider: Is f the right model for this dataset?
+
+</Accordion>
+
+<Accordion title="3. Omega_h < 0.50">
+
+**Diagnostic:**
+```
+omega_h = 0.437
+```
+
+**Interpretation:** General factor is weak. Most reliable variance is domain-specific.
+
+**Not necessarily bad:**
+- May indicate genuinely multidimensional construct
+- PERMA+H is **designed** to have distinct domains
+- Low omega_h + high domain reliabilities = healthy multidimensionality
+
+**Bad if:** Individual domain reliabilities are also low (< 0.60) → measurement error
+
+</Accordion>
+
+<Accordion title="4. Unstable equilibrium (Lyapunov)">
+
+**Diagnostic:**
+```
+Jacobian eigenvalues: Re(λ₁) = +0.023
+⚠ System unstable
+```
+
+**Meaning:** Country is near a tipping point (eigenvalue crosses zero).
+
+**Implications:**
+- Small shocks can cause runaway divergence
+- Equilibrium exists but is repelling (unstable fixed point)
+- System may be transitioning between regimes
+
+**Example contexts:** Countries in crisis, rapid development transitions, regime change
+
+</Accordion>
+
+</AccordionGroup>
+
+## Comparing Across Contexts
+
+### Country-Level vs Individual-Level
+
+| Metric | Country-Level | Individual-Level |
+|--------|---------------|------------------|
+| PC1 variance | 65-85% | 45-60% |
+| Mean correlation | 0.70-0.85 | 0.45-0.65 |
+| omega_h | 0.70-0.90 | 0.55-0.75 |
+
+**Why the difference?** Ecological aggregation removes within-group variance, inflating correlations.
+
+### Cross-Cultural Comparisons
+
+<Warning>
+**Measurement invariance is required** to compare f-scores across cultures.
+
+Before comparing Country A vs Country B:
+1. Check: Do factor loadings differ?
+2. Test: Configural → metric → scalar invariance
+3. If violated: f may not mean the same thing in both cultures
+
+The country-level WHR analysis assumes measurement equivalence (Gallup uses standardized protocol). Individual-level cross-cultural comparison requires explicit invariance testing.
+</Warning>

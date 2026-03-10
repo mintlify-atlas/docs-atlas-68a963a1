@@ -1,0 +1,742 @@
+---
+title: 'Model Calibration & Dynamics'
+description: 'Functions for calibrating mutualism models, computing equilibria, Jacobians, and resilience metrics'
+---
+
+## Overview
+
+The model calibration module implements the mutualism dynamical system (Model 2), Lyapunov stability analysis (Model 3), and parameter estimation methods for fitting dynamical models to wellbeing data.
+
+---
+
+## Mutualism System Class
+
+### MutualismSystem
+
+```python
+class MutualismSystem:
+    def __init__(self, K, a=None, C=None, M=None, sigma=None)
+```
+
+**From script 03:**
+
+Coupled logistic growth model for wellbeing dynamics (adapted from van der Maas et al. 2006).
+
+<ParamField path="K" type="int" required>
+  Number of wellbeing domains
+</ParamField>
+
+<ParamField path="a" type="np.ndarray" default="None">
+  Intrinsic growth rates (K,). Default: all 0.5
+</ParamField>
+
+<ParamField path="C" type="np.ndarray" default="None">
+  Carrying capacities (K,). Default: all 1.0
+</ParamField>
+
+<ParamField path="M" type="np.ndarray" default="None">
+  Mutualistic coupling matrix (K × K), diagonal = 0. Default: all 0.1
+</ParamField>
+
+<ParamField path="sigma" type="np.ndarray" default="None">
+  Noise amplitudes (K,) for stochastic simulation. Default: all 0.05
+</ParamField>
+
+**Dynamical Equation:**
+
+$$
+\frac{dx_k}{dt} = a_k \cdot x_k \cdot \left(1 - \frac{x_k}{C_k} + \sum_{l \neq k} \frac{M_{kl} \cdot x_l}{C_k}\right) + \sigma_k \cdot \xi_k(t)
+$$
+
+Where:
+- $x_k(t)$ = level of domain k at time t
+- $a_k$ = intrinsic growth rate (how quickly domain responds)
+- $C_k$ = carrying capacity (baseline level without mutualism)
+- $M_{kl}$ = coupling strength (how much domain l facilitates domain k)
+- $\sigma_k$ = noise amplitude
+- $\xi_k(t)$ = white noise (stochastic term)
+
+**Key Prediction:**
+
+At equilibrium: $x_k^* > C_k$ (mutualism lifts equilibrium above baseline).
+
+**File Location:** `03_models_full_f.py:348`
+
+---
+
+### deterministic_rhs()
+
+```python
+def deterministic_rhs(self, t, x) -> np.ndarray
+```
+
+Right-hand side of the deterministic ODE system (σ = 0).
+
+<ParamField path="t" type="float" required>
+  Time (not used in autonomous system, but required by scipy.integrate.solve_ivp)
+</ParamField>
+
+<ParamField path="x" type="np.ndarray" required>
+  Current state vector (K,)
+</ParamField>
+
+<ParamField path="return" type="np.ndarray">
+  Time derivative dx/dt (K,)
+</ParamField>
+
+**Usage:**
+
+```python
+from scipy.integrate import solve_ivp
+
+sol = solve_ivp(
+    sys.deterministic_rhs,
+    t_span=(0, 100),
+    y0=initial_state,
+    method="RK45",
+)
+```
+
+**File Location:** `03_models_full_f.py:374`
+
+---
+
+### find_equilibrium()
+
+```python
+def find_equilibrium(
+    self,
+    x0=None,
+    t_span=(0, 200),
+    t_eval_n=2000
+) -> tuple
+```
+
+Finds equilibrium analytically and generates trajectory for plotting.
+
+<ParamField path="x0" type="np.ndarray" default="None">
+  Initial state for trajectory (unused, kept for API compatibility)
+</ParamField>
+
+<ParamField path="t_span" type="tuple" default="(0, 200)">
+  Time span for trajectory simulation
+</ParamField>
+
+<ParamField path="t_eval_n" type="int" default="2000">
+  Number of time points to evaluate
+</ParamField>
+
+<ParamField path="return" type="tuple">
+  Returns `(x_star, sol)` where:
+  - `x_star`: Equilibrium state vector (K,)
+  - `sol`: ODE solution object from solve_ivp
+</ParamField>
+
+**File Location:** `03_models_full_f.py:385`
+
+---
+
+### analytical_equilibrium()
+
+```python
+def analytical_equilibrium(self) -> np.ndarray
+```
+
+Computes the analytical non-trivial equilibrium of the mutualism system.
+
+<ParamField path="return" type="np.ndarray">
+  Equilibrium state vector x* (K,)
+</ParamField>
+
+**Derivation:**
+
+At equilibrium, $\frac{dx_k}{dt} = 0$ for all k. For non-trivial equilibrium ($x_k > 0$):
+
+$$
+1 - \frac{x_k}{C_k} + \sum_{l \neq k} \frac{M_{kl} \cdot x_l}{C_k} = 0
+$$
+
+Rearranging:
+
+$$
+x_k = C_k + \sum_{l \neq k} M_{kl} \cdot x_l
+$$
+
+In matrix form:
+
+$$
+(I - \tilde{M}) \mathbf{x}^* = \mathbf{C}
+$$
+
+Where $\tilde{M}_{kl} = M_{kl}$ for $k \neq l$, and diagonal = 0.
+
+**Solution:**
+
+$$
+\mathbf{x}^* = (I - \tilde{M})^{-1} \mathbf{C}
+$$
+
+**File Location:** `03_models_full_f.py:432`
+
+---
+
+### jacobian_at_equilibrium()
+
+```python
+def jacobian_at_equilibrium(self, x_star) -> np.ndarray
+```
+
+Computes the Jacobian matrix J at equilibrium x* (required for stability analysis).
+
+<ParamField path="x_star" type="np.ndarray" required>
+  Equilibrium state vector (K,)
+</ParamField>
+
+<ParamField path="return" type="np.ndarray">
+  Jacobian matrix J (K × K)
+</ParamField>
+
+**Formulas:**
+
+**Diagonal elements** (∂ẋ_k / ∂x_k):
+
+$$
+J_{kk} = a_k \left(1 - \frac{2x_k^*}{C_k} + \sum_{l \neq k} \frac{M_{kl} x_l^*}{C_k}\right)
+$$
+
+**Off-diagonal elements** (∂ẋ_k / ∂x_l):
+
+$$
+J_{kl} = a_k \cdot \frac{x_k^* \cdot M_{kl}}{C_k}
+$$
+
+**Interpretation:**
+- Eigenvalues of J determine local stability
+- All Re(λ) < 0 → stable equilibrium
+- Dominant eigenvalue λ₁ (largest Re) → return time τ = 1/|Re(λ₁)|
+
+**File Location:** `03_models_full_f.py:406`
+
+---
+
+### simulate_population()
+
+```python
+def simulate_population(
+    self,
+    n_individuals=200,
+    C_var=0.15,
+    M_var=0.05,
+    a_var=0.05,
+    seed=42,
+) -> np.ndarray
+```
+
+Simulates a population of individuals with parameter variation.
+
+<ParamField path="n_individuals" type="int" default="200">
+  Number of individuals to simulate
+</ParamField>
+
+<ParamField path="C_var" type="float" default="0.15">
+  Coefficient of variation for carrying capacities (log-normal perturbation)
+</ParamField>
+
+<ParamField path="M_var" type="float" default="0.05">
+  CV for coupling matrix M
+</ParamField>
+
+<ParamField path="a_var" type="float" default="0.05">
+  CV for growth rates a
+</ParamField>
+
+<ParamField path="seed" type="int" default="42">
+  Random seed for reproducibility
+</ParamField>
+
+<ParamField path="return" type="np.ndarray">
+  Equilibrium matrix (n_individuals × K) — each row is one person's equilibrium state
+</ParamField>
+
+**Key Demonstration:**
+
+This is the critical proof-of-concept: individual differences in parameters (C, a, M) produce a covariance matrix with a positive manifold, **even though no single latent variable generated the data**.
+
+**Parameter Variation Model:**
+
+1. Each individual i has:
+   - $C_i = C \cdot \exp(\mathcal{N}(0, \sigma_C))$
+   - $M_i = M \cdot \exp(\mathcal{N}(0, \sigma_M))$
+   - $a_i = a \cdot \exp(\mathcal{N}(0, \sigma_a))$
+
+2. Shared "environmental" factor:
+   - $C_i \leftarrow C_i \cdot \exp(0.5 \cdot \epsilon_i)$
+   - Where $\epsilon_i \sim \mathcal{N}(0, 0.3)$
+   - This is NOT a latent cause — it's a correlated input parameter
+
+3. Solve for equilibrium: $x_i^* = (I - \tilde{M}_i)^{-1} C_i$
+
+**Result:**
+- Population correlation matrix shows positive manifold
+- PCA on equilibria yields dominant first eigenvalue
+- But: no single g-factor caused the data (mutualism did)
+
+**File Location:** `03_models_full_f.py:457`
+
+---
+
+### mean_coupling_strength()
+
+```python
+def mean_coupling_strength(self) -> float
+```
+
+Computes mean coupling strength M̄ (average of off-diagonal M matrix).
+
+<ParamField path="return" type="float">
+  Mean coupling M̄ = (2 / (K(K-1))) × Σ_{k<l} M_{kl}
+</ParamField>
+
+**Usage:**
+
+Used in coupling strength sweep to test optimal regime prediction.
+
+**File Location:** `03_models_full_f.py:496`
+
+---
+
+## Parameter Estimation
+
+### calibrate_mutualism_from_data()
+
+```python
+def calibrate_mutualism_from_data(X_raw, cols) -> MutualismSystem
+```
+
+Calibraates mutualism model parameters from observed country-level wellbeing data.
+
+<ParamField path="X_raw" type="np.ndarray" required>
+  Raw (unstandardized) wellbeing data matrix (N × K)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names (K dimensions)
+</ParamField>
+
+<ParamField path="return" type="MutualismSystem">
+  Calibrated MutualismSystem object
+</ParamField>
+
+**Estimation Strategy:**
+
+1. **Carrying capacities C_k:**
+   - Set to 70% of observed column means
+   - Rationale: mutualism lifts equilibrium above C, so observed mean ≈ 1.4 × C
+   - Formula: `C_k = 0.7 × mean(X[:, k])`
+
+2. **Coupling matrix M:**
+   - Derived from partial correlations (control for all other dimensions)
+   - Partial r_ij estimates direct interaction strength
+   - Scaled to [0.05, 0.3] range (typical mutualism strength)
+   - Formula: `M = scale(abs(partial_corr))`
+
+3. **Growth rates a_k:**
+   - Not identifiable from cross-sectional data
+   - Set to 0.5 (moderate growth rate)
+   - In longitudinal data, could estimate from time-series
+
+**File Location:** `03_models_full_f.py:503`
+
+---
+
+## Lyapunov Stability Analysis
+
+### lyapunov_analysis()
+
+```python
+def lyapunov_analysis(sys, x_star) -> dict
+```
+
+**From script 03:**
+
+Full Lyapunov stability analysis at equilibrium x*.
+
+<ParamField path="sys" type="MutualismSystem" required>
+  Mutualism system object
+</ParamField>
+
+<ParamField path="x_star" type="np.ndarray" required>
+  Equilibrium state vector (K,)
+</ParamField>
+
+<ParamField path="return" type="dict">
+  Dictionary with keys:
+  - `J`: Jacobian matrix (K × K)
+  - `eigenvalues`: Eigenvalues of J (sorted by real part, descending)
+  - `lambda_1`: Dominant eigenvalue (largest real part)
+  - `tau`: Characteristic return time = 1/|Re(λ₁)|
+  - `P`: Solution to Lyapunov equation J'P + PJ = -Q
+  - `resilience`: Basin depth proxy = 1/√(max eigenvalue of P)
+  - `stable`: Boolean, True if all Re(λ) < 0
+</ParamField>
+
+**Lyapunov Equation:**
+
+$$
+J^T P + P J = -Q
+$$
+
+Where:
+- J = Jacobian at equilibrium
+- Q = identity matrix (positive definite)
+- P = solution (characterizes basin of attraction)
+
+**Basin of Attraction Ellipsoid:**
+
+The set of perturbations δx such that:
+
+$$
+\delta x^T P \delta x \leq c
+$$
+
+defines an ellipsoid around x*. Trajectories starting inside return to equilibrium.
+
+**Resilience Metric:**
+
+$$
+R(x^*) = \frac{1}{\sqrt{\lambda_{\max}(P)}}
+$$
+
+This is the "radius" of the basin in the most vulnerable direction.
+
+**File Location:** `03_models_full_f.py:640`
+
+---
+
+### country_resilience_scores()
+
+```python
+def country_resilience_scores(X_raw, base_sys, cols) -> pd.DataFrame
+```
+
+Computes per-country resilience metrics by back-solving for country-specific carrying capacities.
+
+<ParamField path="X_raw" type="np.ndarray" required>
+  Observed country-level data (N × K)
+</ParamField>
+
+<ParamField path="base_sys" type="MutualismSystem" required>
+  Base mutualism system (provides M and a)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="return" type="pd.DataFrame">
+  DataFrame (N rows) with columns:
+  - `lambda_1_real`: Real part of dominant eigenvalue
+  - `tau`: Return time
+  - `resilience`: Resilience R(x*)
+  - `stable`: Boolean stability flag
+  - `mean_coupling`: Mean coupling strength for this country
+</ParamField>
+
+**Back-Solving Procedure:**
+
+1. For each country i, observed state = $x_i$
+2. Assume $x_i$ is the equilibrium: $x_i = (I - \tilde{M})^{-1} C_i$
+3. Invert: $C_i = (I - \tilde{M}) x_i$
+4. Create country-specific system with $C_i$, shared M and a
+5. Run Lyapunov analysis on this system
+
+**Result:**
+
+Each country gets its own resilience score, allowing correlation analysis with f scores.
+
+**File Location:** `03_models_full_f.py:694`
+
+---
+
+## Optimization Methods
+
+### Bifactor CFA Optimization
+
+Maximum likelihood estimation uses scipy.optimize.minimize:
+
+```python
+from scipy.optimize import minimize
+
+result = minimize(
+    _ml_discrepancy,
+    x0,
+    args=(S, N, p, group_indices),
+    method="L-BFGS-B",
+    options={"maxiter": 5000, "ftol": 1e-10},
+)
+```
+
+**Objective:** Minimize ML discrepancy function
+
+**Method:** L-BFGS-B (limited-memory quasi-Newton with box constraints)
+
+**Parameters:**
+- `x0`: Initial guess (from PCA)
+- Constraints: Unique variances θ > 0 (enforced via log-parameterization)
+
+**File Location:** `03_models_full_f.py:227`
+
+---
+
+### Equilibrium Solving
+
+Analytical solution preferred when available:
+
+```python
+x_star = sys.analytical_equilibrium()
+```
+
+For nonlinear systems, use scipy.optimize.fsolve:
+
+```python
+from scipy.optimize import fsolve
+
+def equilibrium_conditions(x):
+    return sys.deterministic_rhs(0, x)
+
+x_star = fsolve(equilibrium_conditions, x0)
+```
+
+**Usage:** Mutualism system has closed-form solution, so fsolve not needed.
+
+---
+
+## Coupling Strength Sweep
+
+### coupling_sweep()
+
+```python
+def coupling_sweep(base_sys, n_points=15, n_individuals=80) -> pd.DataFrame
+```
+
+Sweeps mean coupling strength M̄ from low to high and tracks key outcomes.
+
+<ParamField path="base_sys" type="MutualismSystem" required>
+  Base system (provides C, a, and coupling structure)
+</ParamField>
+
+<ParamField path="n_points" type="int" default="15">
+  Number of M̄ values to test
+</ParamField>
+
+<ParamField path="n_individuals" type="int" default="80">
+  Population size for each simulation
+</ParamField>
+
+<ParamField path="return" type="pd.DataFrame">
+  DataFrame with columns:
+  - `m_bar`: Coupling strength values tested
+  - `pct_var_pc1`: PC1 variance explained (%)
+  - `mean_eq`: Mean equilibrium level across all domains
+  - `resilience`: Resilience R(x*) at base equilibrium
+  - `stable_frac`: Proportion of stable systems (0 or 1)
+</ParamField>
+
+**Paper Prediction:**
+
+There exists an optimal coupling regime where:
+1. f dominance is strong (high PC1 variance)
+2. Wellbeing level is high (x* >> C)
+3. Resilience is maximized (deep basin of attraction)
+
+**Too little coupling:**
+- Weak f, low equilibrium
+
+**Optimal coupling:**
+- Strong f, high equilibrium, resilient
+
+**Too much coupling:**
+- Potential instability (cascade risk)
+- Re(λ₁) → 0 (slow recovery)
+
+**File Location:** `03_models_full_f.py:1111`
+
+---
+
+## Capabilities-Adjusted Flourishing
+
+### compute_capabilities_adjusted_f()
+
+```python
+def compute_capabilities_adjusted_f(
+    df,
+    X_raw,
+    f_scores,
+    cols,
+    threshold_quantile=0.25,
+) -> tuple
+```
+
+**From script 03 (Model 4):**
+
+Computes capability-adjusted flourishing measure f_cap with Nussbaum thresholds and Alkire-Foster deprivation scoring.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with country names (for output)
+</ParamField>
+
+<ParamField path="X_raw" type="np.ndarray" required>
+  Raw wellbeing data (N × K)
+</ParamField>
+
+<ParamField path="f_scores" type="np.ndarray" required>
+  Standard psychometric f scores (from PCA)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="threshold_quantile" type="float" default="0.25">
+  Quantile for setting Nussbaum thresholds (25th percentile = bottom quarter)
+</ParamField>
+
+<ParamField path="return" type="tuple">
+  Returns `(result_df, summary)` where:
+  - `result_df`: DataFrame with f_cap and intermediate measures
+  - `summary`: Dict with thresholds, H (headcount), A (intensity), M₀ (adjusted headcount)
+</ParamField>
+
+**Formula:**
+
+$$
+f_{\text{cap}} = f(x^*) \cdot \mathbb{1}[x_k^* \geq z_k \, \forall k] \cdot h(Q_i)
+$$
+
+Where:
+- $f(x^*)$ = standard psychometric f score
+- $\mathbb{1}[\cdot]$ = Nussbaum threshold indicator (non-compensatory)
+- $h(Q_i)$ = capability set size proxy (balance score)
+
+**Nussbaum Threshold Logic:**
+
+- If ANY dimension falls below threshold → capability deprivation
+- Non-compensatory: high achievement in one domain cannot offset deficiency in another
+- Example: High income cannot compensate for lack of health
+
+**Alkire-Foster Deprivation Scoring:**
+
+1. Deprivation indicator: $g_{ij} = \mathbb{1}[x_{ij} < z_j]$
+2. Deprivation score: $c_i = \sum_j w_j \cdot g_{ij}$ (weights $w_j = 1/K$)
+3. Identification cutoff: Deprived if $c_i \geq 1/3$ (deprived in ≥1/3 of dimensions)
+4. **H** (headcount): Proportion identified as deprived
+5. **A** (average intensity): Mean deprivation score among the deprived
+6. **M₀** (adjusted headcount ratio): $M_0 = H \times A$
+
+**Capability Set Size h(Q):**
+
+Approximated as normalized balance score:
+
+$$
+h = 1 - \frac{CV(x_i)}{\max(CV)}
+$$
+
+Where $CV = \text{std}/\text{mean}$ across dimensions (coefficient of variation).
+
+**Interpretation:**
+- Lower CV → more balanced wellbeing → larger effective capability set
+- High CV → concentrated in few domains → restricted functionings
+
+**File Location:** `03_models_full_f.py:924`
+
+---
+
+## Numerical Methods
+
+### ODE Integration
+
+All time-series simulations use scipy.integrate.solve_ivp:
+
+```python
+from scipy.integrate import solve_ivp
+
+sol = solve_ivp(
+    sys.deterministic_rhs,
+    t_span=(0, 100),
+    y0=initial_state,
+    method="RK45",
+    max_step=1.0,
+    rtol=1e-8,
+    atol=1e-10,
+)
+```
+
+**Method:** RK45 (Runge-Kutta 4th/5th order adaptive)
+
+**Parameters:**
+- `max_step`: Maximum time step (prevents skipping fast dynamics)
+- `rtol`, `atol`: Relative and absolute error tolerances
+
+---
+
+### Matrix Inversion
+
+Uses numpy.linalg.inv with error handling:
+
+```python
+try:
+    A_inv = np.linalg.inv(A)
+except np.linalg.LinAlgError:
+    # Fallback: use pseudoinverse or skip
+    A_inv = np.linalg.pinv(A)
+```
+
+**Common Issues:**
+- Singular matrices (det ≈ 0) when coupling too strong
+- Ill-conditioned matrices → numerical instability
+
+---
+
+### Eigenvalue Computation
+
+Uses scipy.linalg.eigvals for complex eigenvalues:
+
+```python
+from scipy.linalg import eigvals
+
+eigs = eigvals(J)
+```
+
+**For symmetric real matrices**, use numpy.linalg.eigvalsh (faster):
+
+```python
+eigs = np.linalg.eigvalsh(S)
+```
+
+---
+
+## Model Parameters Summary
+
+### Typical Ranges (from paper and scripts)
+
+| Parameter | Symbol | Typical Range | Unit |
+|-----------|--------|---------------|------|
+| Growth rate | a | 0.3 – 0.7 | 1/time |
+| Carrying capacity | C | 3.0 – 6.0 | raw scale |
+| Coupling strength | M_kl | 0.05 – 0.3 | dimensionless |
+| Mean coupling | M̄ | 0.1 – 0.2 | dimensionless |
+| Noise amplitude | σ | 0.01 – 0.1 | raw scale |
+| Return time | τ | 5 – 50 | time units |
+| Resilience | R(x*) | 0.1 – 1.0 | raw scale |
+
+### Cross-Sectional vs. Longitudinal
+
+**Cross-sectional data (scripts 01-03):**
+- Can estimate: C (from means), M (from partial correlations)
+- Cannot estimate: a (requires time-series), σ (requires repeated measures)
+- Assumption: All countries at equilibrium
+
+**Longitudinal data (future work):**
+- Can estimate all parameters
+- Fit trajectories x(t) to ODE system
+- Identify individual differences in a, C, M

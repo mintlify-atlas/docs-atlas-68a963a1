@@ -1,0 +1,275 @@
+---
+title: 'PERMA+H Framework'
+description: 'Comprehensive breakdown of the six wellbeing dimensions and how they map to empirical data sources'
+---
+
+## Overview
+
+The **PERMA+H** framework extends Martin Seligman's original PERMA model (2011) by adding Health as a sixth dimension. Together, these six domains provide comprehensive coverage of human flourishing:
+
+| Dimension | Full Name | Description |
+|-----------|-----------|-------------|
+| **P** | Positive Emotion | Hedonic wellbeing - joy, contentment, pleasure |
+| **E** | Engagement | Flow states, autonomy, immersion in meaningful activity |
+| **R** | Relationships | Social support, connection, positive relations |
+| **M** | Meaning | Purpose in life, life satisfaction, coherence |
+| **A** | Accomplishment | Achievement, mastery, material success |
+| **H** | Health | Physical and mental health, healthy life expectancy |
+
+<Info>
+These six dimensions are **not independent** - they form a tightly coupled system where improvements in one domain tend to support growth in others. This interdependence is the foundation of the [f-factor](/concepts/f-factor).
+</Info>
+
+## Detailed Dimension Breakdown
+
+### P: Positive Emotion
+
+**Definition**: The hedonic component of wellbeing - subjective feelings of happiness, joy, contentment, and pleasure.
+
+**Key characteristics**:
+- Most direct measure of "feeling good"
+- Shortest time horizon (momentary to daily)
+- Correlates ~0.55 with overall wellbeing
+- Anti-correlates ~-0.45 with negative affect (p-factor)
+
+**Data mappings**:
+- **WHR**: Positive affect (Gallup World Poll item)
+- **MIDUS 2**: `B1SPOSPA` - Positive Affect composite (1-5 scale, mean of ~7 items)
+- **OECD BLI**: Implicit in Life Satisfaction scores
+
+<Warning>
+Positive affect data is often _missing_ from country-level datasets. WHR 2024 GitHub mirrors may not include this column. Scripts gracefully skip if unavailable.
+</Warning>
+
+```python
+# From 01_download_wellbeing_data.py - PERMA mapping
+WHR_COLUMN_MAP = {
+    "positive affect": "P_positive_emotion",
+    # ... other mappings
+}
+```
+
+### E: Engagement
+
+**Definition**: Flow states, autonomy, self-direction, and immersion in meaningful activity. The "absorption" component of wellbeing.
+
+**Key characteristics**:
+- Difficult to measure (people in flow can't self-report during the state)
+- Proxy: autonomy and freedom to make life choices
+- Eudaimonic dimension ("being your best self")
+- Correlates with personal growth and mastery
+
+**Data mappings**:
+- **WHR**: "Freedom to make life choices" (autonomy proxy)
+- **MIDUS 2**: Two Ryff subscales serve as E proxies:
+  - `B1SPWBA1` - Autonomy (self-direction)
+  - `B1SPWBG1` - Personal Growth (development/engagement)
+- **OECD BLI**: Work-Life Balance (partial proxy)
+
+<Note>
+**Why two MIDUS subscales?** Ryff's 6-dimensional model was developed independently of PERMA. Autonomy and Personal Growth both capture aspects of engagement/self-actualization.
+</Note>
+
+### R: Relationships
+
+**Definition**: Quality of social connections, social support, positive relations with others.
+
+**Key characteristics**:
+- Strongest predictor of long-term wellbeing
+- Protective factor against mental and physical illness
+- Most consistent across cultures (universal human need)
+- Correlates 0.34-0.59 with other Ryff subscales
+
+**Data mappings**:
+- **WHR**: "Social support" (do you have someone to count on?)
+- **MIDUS 2**: `B1SPWBR1` - Positive Relations with Others
+- **OECD BLI**: Community indicator (social network support)
+
+```python
+# From 01_download_wellbeing_data.py
+# PERMA+H mapping (WHR primary columns)
+#   R  Relationships  → Social support
+```
+
+### M: Meaning
+
+**Definition**: Sense of purpose, direction, and significance in life. Belief that one's life has coherence and value.
+
+**Key characteristics**:
+- Eudaimonic dimension ("life well-lived")
+- Most cognitive/evaluative component
+- Correlates 0.60-0.66 with mastery and self-acceptance
+- Often measured via life satisfaction (Cantril ladder)
+
+**Data mappings**:
+- **WHR**: Cantril ladder / "Ladder score" (0-10 life evaluation)
+- **MIDUS 2**: Two indicators:
+  - `B1SPWBU1` - Purpose in Life (Ryff primary measure)
+  - `B1SB1` - Overall Life Satisfaction (0-10 scale, supplemental)
+- **OECD BLI**: Life Satisfaction indicator
+
+<Info>
+The Cantril ladder asks: "Imagine a ladder with steps numbered 0 to 10, where 0 is the worst possible life and 10 is the best. Where do you stand today?" This is a _cognitive evaluation_, not momentary affect.
+</Info>
+
+### A: Accomplishment
+
+**Definition**: Achievement, mastery, material success, and sense of environmental control.
+
+**Key characteristics**:
+- Most culturally variable dimension
+- Includes both objective (income, education) and subjective (sense of mastery) components
+- Correlates 0.56-0.77 with other eudaimonic dimensions
+- Strongest correlation: A ↔ Self-Acceptance (0.77)
+
+**Data mappings**:
+- **WHR**: Log GDP per capita (material achievement proxy)
+- **MIDUS 2**: `B1SPWBE1` - Environmental Mastery (sense of control/competence)
+- **OECD BLI**: Jobs & Earnings, Income & Wealth, Education & Skills
+- **World Bank**: School enrollment, employment indicators
+
+```python
+# From 01_download_wellbeing_data.py - World Bank supplemental
+WB_INDICATORS = {
+    "SE.PRM.NENR":        "wb_primary_enrollment",     # Education
+    "SL.UEM.TOTL.ZS":     "wb_unemployment_pct",      # Jobs
+    # ... additional indicators
+}
+```
+
+### H: Health
+
+**Definition**: Physical and mental health status. Added to PERMA because health both enables and results from flourishing.
+
+**Why add Health to the original PERMA?**
+
+1. **Bidirectional causality**: Good health enables engagement and positive emotion; flourishing promotes health behaviors
+2. **Empirical evidence**: Health loads strongly on the f-factor (typically λ ~ 0.35-0.45)
+3. **Policy relevance**: Health is a concrete, measurable outcome that policymakers care about
+4. **Capability requirement**: Nussbaum's capability approach identifies health as a fundamental threshold
+
+**Data mappings**:
+- **WHR**: Healthy Life Expectancy at birth (years)
+- **MIDUS 2**: `B1SA11W` - Self-Rated Health (1=excellent → 5=poor, _reversed_ to 1-5 good)
+- **OECD BLI**: Health Status indicator
+- **World Bank**: Life expectancy, Health expenditure % GDP
+
+<Note>
+**Health scaling**: WHR uses population-level life expectancy (40-80 year range), while MIDUS uses individual self-ratings (1-5 Likert). Always check scale and direction when mapping!
+</Note>
+
+## PERMA → Data Source Mappings
+
+From `01_download_wellbeing_data.py:22-42`:
+
+<Accordion title="World Happiness Report 2024 (Primary)">
+```python
+PERMA_COLS = [
+    "P_positive_emotion",      # WHR: Positive affect
+    "E_engagement_autonomy",   # WHR: Freedom to make life choices
+    "R_relationships",         # WHR: Social support
+    "M_meaning_life_sat",      # WHR: Ladder score (Cantril 0-10)
+    "A_accomplishment_gdp",    # WHR: Log GDP per capita
+    "H_health",                # WHR: Healthy life expectancy
+]
+```
+
+**Coverage**: ~137 countries (2021-2023 data)  
+**Level**: Country-level aggregates (3-year rolling averages)  
+**Source**: Gallup World Poll  
+**Access**: GitHub mirror at `Escavine/World-Happiness`
+</Accordion>
+
+<Accordion title="MIDUS 2 - Ryff PWB (Individual Level)">
+```python
+RYFF_PERMA = {
+    "B1SPWBA1": "E",   # Autonomy (self-direction)
+    "B1SPWBE1": "A",   # Environmental Mastery
+    "B1SPWBG1": "E",   # Personal Growth
+    "B1SPWBR1": "R",   # Positive Relations
+    "B1SPWBU1": "M",   # Purpose in Life
+    "B1SPWBS1": "P",   # Self-Acceptance (positive self-view)
+}
+# Supplemental:
+# B1SPOSPA → P (Positive Affect - best proxy)
+# B1SA11W  → H (Self-Rated Health)
+```
+
+**Coverage**: ~4,963 individuals (US adults, ages 35-86)  
+**Level**: Individual responses (survey wave 2004-2006)  
+**Source**: ICPSR 4652, University of Wisconsin  
+**Access**: Free registration required at icpsr.umich.edu
+</Accordion>
+
+<Accordion title="OECD Better Life Index (Supplemental)">
+```python
+OECD_INDICATOR_MAP = {
+    "Life satisfaction":      "oecd_life_satisfaction",  # M
+    "Community":              "oecd_community",          # R
+    "Work-life balance":      "oecd_work_life_balance",  # E
+    "Health status":          "oecd_health_status",      # H
+    "Jobs and earnings":      "oecd_jobs",               # A
+    "Education and skills":   "oecd_education",          # A
+    # ... 11 indicators total
+}
+```
+
+**Coverage**: 38 OECD countries  
+**Level**: Country-level (latest available year)  
+**Source**: OECD National Accounts  
+**Access**: `datasets/oecd-bli` GitHub mirror
+</Accordion>
+
+## Interdependence: The Mutualism Hypothesis
+
+PERMA+H dimensions are **not independent**. Empirical correlations:
+
+| Pair | Typical r | Interpretation |
+|------|-----------|----------------|
+| M ↔ A | 0.65-0.77 | Purpose drives achievement; success reinforces meaning |
+| R ↔ M | 0.52-0.59 | Relationships provide purpose; purpose motivates connection |
+| E ↔ M | 0.60 | Engagement in meaningful activity is intrinsically rewarding |
+| P ↔ all | 0.40-0.55 | Positive emotion is both cause and consequence of flourishing |
+| H ↔ all | 0.35-0.45 | Health enables all domains; all domains protect health |
+
+From `04_individual_level_f_analysis.py:200-208` - known MIDUS 2 benchmarks:
+
+```python
+MIDUS_CORR_MATRIX = np.array([
+    # Auton   Mastery  Growth   PoRel   Purpose  Self-Acc
+    [1.00,    0.47,    0.47,    0.34,    0.44,    0.40],  # Autonomy (E)
+    [0.47,    1.00,    0.56,    0.54,    0.65,    0.77],  # Mastery (A)
+    [0.47,    0.56,    1.00,    0.47,    0.60,    0.49],  # Growth (E)
+    [0.34,    0.54,    0.47,    1.00,    0.52,    0.59],  # Pos Relations (R)
+    [0.44,    0.65,    0.60,    0.52,    1.00,    0.66],  # Purpose (M)
+    [0.40,    0.77,    0.49,    0.59,    0.66,    1.00],  # Self-Acceptance (P)
+])
+```
+
+**Weakest pair**: Autonomy ↔ Positive Relations (0.34) - "most distinct subscale"  
+**Strongest pair**: Mastery ↔ Self-Acceptance (0.77) - nearly redundant after removing measurement error
+
+This interdependence is formalized in [Model 2: Mutualism](/concepts/mathematical-models#model-2-mutualism), where PERMA+H dimensions support each other through coupled growth dynamics.
+
+## Related Resources
+
+- [f-Factor](/concepts/f-factor) - The general factor emerging from PERMA+H
+- [Data Sources](/concepts/data-sources) - How to download and harmonize PERMA data
+- [Mathematical Models](/concepts/mathematical-models) - Formal models of PERMA interdependence
+
+## Implementation Notes
+
+<Warning>
+**Variable naming conventions**: Column names differ across data sources. The scripts use a standardized `{LETTER}_description` format:
+- WHR: `M_meaning_life_sat` (snake_case, descriptive)
+- MIDUS: `B1SPWBU1` (original ICPSR codes preserved)
+- Always check the mapping dictionaries in script headers!
+</Warning>
+
+**Missing data handling**:
+- WHR: ~20% missing on Positive Affect (not in all mirrors)
+- MIDUS: ~10% missing on auxiliary variables (affects, health)
+- Scripts drop rows with _any_ missing value on core PERMA dimensions for complete-case analysis
+- Pairwise deletion available for supplemental analyses
+
+Full preprocessing pipeline: `01_download_wellbeing_data.py:125-198`

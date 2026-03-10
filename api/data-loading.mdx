@@ -1,0 +1,389 @@
+---
+title: 'Data Loading & Preprocessing'
+description: 'Functions for downloading, parsing, merging, and preprocessing wellbeing data from multiple sources'
+---
+
+## Overview
+
+The data loading module handles acquisition and harmonization of cross-national and individual-level wellbeing data for f-factor analysis. Data sources include the World Happiness Report, OECD Better Life Index, World Bank Open Data, and MIDUS psychological wellbeing scales.
+
+---
+
+## World Happiness Report (WHR)
+
+### download_whr()
+
+```python
+def download_whr() -> pd.DataFrame
+```
+
+Downloads World Happiness Report 2024 data from GitHub mirror (Escavine/World-Happiness).
+
+<ParamField path="return" type="pd.DataFrame">
+  Raw WHR dataframe with country-level wellbeing indicators
+</ParamField>
+
+**Data Source:**
+- URL: `https://raw.githubusercontent.com/Escavine/World-Happiness/main/World-happiness-report-2024.csv`
+- Includes: Positive affect, Freedom, Social support, Ladder score, Log GDP per capita, Healthy life expectancy
+
+**File Location:** `01_download_wellbeing_data.py:125`
+
+---
+
+### parse_whr()
+
+```python
+def parse_whr(df: pd.DataFrame) -> pd.DataFrame
+```
+
+Renames WHR columns to PERMA+H schema and handles both cross-sectional and panel data formats.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Raw WHR dataframe from download_whr()
+</ParamField>
+
+<ParamField path="return" type="pd.DataFrame">
+  Cleaned dataframe with standardized column names:
+  - `P_positive_emotion` — Positive affect
+  - `E_engagement_autonomy` — Freedom to make life choices
+  - `R_relationships` — Social support
+  - `M_meaning_life_sat` — Ladder score (Cantril 0-10)
+  - `A_accomplishment_gdp` — Log GDP per capita
+  - `H_health` — Healthy life expectancy
+</ParamField>
+
+**PERMA+H Mapping:**
+- **P** (Positive emotion) → Positive affect
+- **E** (Engagement) → Freedom to make life choices (autonomy proxy)
+- **R** (Relationships) → Social support
+- **M** (Meaning) → Ladder score (life evaluation)
+- **A** (Accomplishment) → Log GDP per capita (material achievement)
+- **H** (Health) → Healthy life expectancy
+
+**Handles Two File Shapes:**
+1. Cross-section: No year column, one row per country
+2. Panel: Has year column; extracts most recent observation per country
+
+**File Location:** `01_download_wellbeing_data.py:136`
+
+---
+
+## OECD Better Life Index
+
+### download_oecd_bli()
+
+```python
+def download_oecd_bli() -> pd.DataFrame
+```
+
+Downloads OECD Better Life Index data as supplemental wellbeing indicators.
+
+<ParamField path="return" type="pd.DataFrame">
+  Raw OECD BLI dataframe (long format) or empty DataFrame on failure
+</ParamField>
+
+**Indicators:**
+- Life satisfaction, Community, Work-life balance, Health status, Jobs, Education, Income, Safety
+
+**File Location:** `01_download_wellbeing_data.py:202`
+
+---
+
+### parse_oecd_bli()
+
+```python
+def parse_oecd_bli(df: pd.DataFrame) -> pd.DataFrame
+```
+
+Pivots OECD BLI from long to wide format: one row per country, one column per indicator.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Raw OECD BLI dataframe from download_oecd_bli()
+</ParamField>
+
+<ParamField path="return" type="pd.DataFrame">
+  Wide-format dataframe with columns: `country_oecd`, `oecd_life_satisfaction`, `oecd_community`, etc.
+</ParamField>
+
+**Filtering:**
+- Keeps only "Total" inequality group (average across genders)
+- Maps indicator names to standardized labels
+
+**File Location:** `01_download_wellbeing_data.py:217`
+
+---
+
+## World Bank Data
+
+### download_world_bank()
+
+```python
+def download_world_bank() -> pd.DataFrame
+```
+
+Fetches supplemental indicators from World Bank Open Data API (most recent value per country).
+
+<ParamField path="return" type="pd.DataFrame">
+  Merged dataframe with World Bank indicators and ISO3 country codes
+</ParamField>
+
+**Indicators Retrieved:**
+- `SP.DYN.LE00.IN` → Life expectancy at birth
+- `SL.UEM.TOTL.ZS` → Unemployment rate (%)
+- `SE.PRM.NENR` → Primary school enrollment
+- `SH.XPD.CHEX.GD.ZS` → Health expenditure (% GDP)
+
+**API Endpoint:** `https://api.worldbank.org/v2/country/all/indicator/{code}?format=json&per_page=300&mrv=1`
+
+**File Location:** `01_download_wellbeing_data.py:291`
+
+---
+
+## Data Merging
+
+### merge_sources()
+
+```python
+def merge_sources(
+    whr: pd.DataFrame,
+    bli: pd.DataFrame,
+    wb: pd.DataFrame,
+) -> pd.DataFrame
+```
+
+Merges WHR (primary), OECD BLI, and World Bank data using fuzzy country name matching.
+
+<ParamField path="whr" type="pd.DataFrame" required>
+  Parsed World Happiness Report data (primary source)
+</ParamField>
+
+<ParamField path="bli" type="pd.DataFrame" required>
+  Parsed OECD Better Life Index data
+</ParamField>
+
+<ParamField path="wb" type="pd.DataFrame" required>
+  World Bank indicator data
+</ParamField>
+
+<ParamField path="return" type="pd.DataFrame">
+  Merged dataframe with all sources joined on normalized country names
+</ParamField>
+
+**Merge Strategy:**
+1. WHR serves as the base (left) dataframe
+2. Country names normalized to lowercase + stripped whitespace
+3. Left join with OECD BLI and World Bank on normalized key
+4. Duplicate columns from secondary sources are dropped
+
+**File Location:** `01_download_wellbeing_data.py:318`
+
+---
+
+## Country-Level Analysis
+
+### load_data()
+
+```python
+def load_data() -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]
+```
+
+**From script 02 (country-level):**
+
+Loads merged wellbeing dataset and prepares it for analysis.
+
+<ParamField path="return" type="tuple">
+  Returns `(df_full, df_clean, X_scaled)` where:
+  - `df_full`: Original loaded dataframe
+  - `df_clean`: Rows with all 6 PERMA+H values present
+  - `X_scaled`: Standardized PERMA+H matrix (N × 6)
+</ParamField>
+
+**Processing Steps:**
+1. Read `wellbeing_data/wellbeing_merged.csv`
+2. Select 6 PERMA+H columns
+3. Drop rows with any missing values
+4. Standardize using `StandardScaler` (z-score normalization)
+
+**File Location:** `02_analyze_wellbeing_f.py:119`
+
+---
+
+## Individual-Level Analysis (MIDUS)
+
+### load_midus()
+
+```python
+def load_midus(path: Path) -> pd.DataFrame
+```
+
+Loads MIDUS 2 (Midlife in the United States) individual-level psychological wellbeing data.
+
+<ParamField path="path" type="Path" required>
+  Path to MIDUS 2 DS0001 tab-delimited file (ICPSR 4652)
+</ParamField>
+
+<ParamField path="return" type="pd.DataFrame">
+  Raw MIDUS dataframe with normalized column names
+</ParamField>
+
+**Data Source:**
+- Study: MIDUS 2 Wave 2 (2004-2006)
+- ICPSR Study Number: 4652
+- N ≈ 4,963 respondents
+- Variables: Ryff Psychological Wellbeing Scale (6 subscales), demographics, affect
+
+**Ryff PWB Subscales:**
+- `B1SPWBA1` — Autonomy (1-7 scale, mean of 3 items)
+- `B1SPWBE1` — Environmental Mastery
+- `B1SPWBG1` — Personal Growth
+- `B1SPWBR1` — Positive Relations
+- `B1SPWBU1` — Purpose in Life
+- `B1SPWBS1` — Self-Acceptance
+
+**Missing Value Handling:**
+- MIDUS composites coded as 3-item *sums* (3-21 range)
+- Missing coded as -1 or ≥ 90
+- Automatically divided by 3 to convert to 1-7 mean scale
+
+**File Location:** `04_individual_level_f_analysis.py:295`
+
+---
+
+### generate_synthetic_midus()
+
+```python
+def generate_synthetic_midus(n: int = 5000) -> pd.DataFrame
+```
+
+Generates synthetic individual-level data matching published MIDUS 2 psychometric properties.
+
+<ParamField path="n" type="int" default="5000">
+  Number of synthetic respondents to generate
+</ParamField>
+
+<ParamField path="return" type="pd.DataFrame">
+  Synthetic dataset with same structure as real MIDUS data
+</ParamField>
+
+**Psychometric Benchmarks (from literature):**
+- Inter-subscale correlations: 0.40–0.77
+- Means: 4.80–5.53 on 1-7 scale
+- SDs: 0.82–0.97
+- Slight negative skew (ceiling effects)
+
+**Generation Method:**
+1. Cholesky decomposition of known correlation matrix
+2. Multivariate normal sampling
+3. Rescale to published means/SDs
+4. Add ceiling effect correction
+5. Clip to valid range [1, 7]
+
+**File Location:** `04_individual_level_f_analysis.py:221`
+
+---
+
+### preprocess()
+
+```python
+def preprocess(df: pd.DataFrame) -> tuple
+```
+
+Prepares MIDUS data for analysis: reverse-codes variables, drops incomplete cases, standardizes.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Raw MIDUS dataframe from load_midus()
+</ParamField>
+
+<ParamField path="return" type="tuple">
+  Returns `(df_clean, X_scaled, present_cols)` where:
+  - `df_clean`: Complete cases on Ryff subscales
+  - `X_scaled`: Standardized matrix (N × 6)
+  - `present_cols`: List of available Ryff column names
+</ParamField>
+
+**Processing Steps:**
+1. Reverse-code self-rated health (so higher = better)
+2. Drop rows with missing values on core Ryff subscales
+3. Standardize using `StandardScaler`
+
+**File Location:** `04_individual_level_f_analysis.py:342`
+
+---
+
+## Standardization
+
+### StandardScaler Usage
+
+All scripts use `sklearn.preprocessing.StandardScaler` for z-score normalization:
+
+```python
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X_raw)
+```
+
+**Transformation:**
+- Centers each variable to mean = 0
+- Scales to standard deviation = 1
+- Formula: `z = (x - μ) / σ`
+
+**Why Standardize:**
+1. Removes scale differences (e.g., 0-10 vs 1-7 scales)
+2. Makes PCA loadings interpretable as correlations
+3. Ensures equal weighting in factor analysis
+4. Required for correlation-based covariance matrices
+
+---
+
+## Missing Data
+
+### Strategy
+
+All scripts use **listwise deletion** (complete-case analysis):
+
+```python
+df_clean = df.dropna(subset=PERMA_COLS)
+```
+
+**Rationale:**
+- WHR/OECD data: Already country-level aggregates with minimal missingness
+- MIDUS data: Ryff composites pre-computed; if missing, entire subscale unreliable
+- Factor analysis requires complete correlation matrix
+
+**Missingness Reporting:**
+
+The `_report_missingness()` helper (script 01) prints per-variable counts:
+
+```python
+def _report_missingness(df: pd.DataFrame, cols: list, label: str = "")
+```
+
+**File Location:** `01_download_wellbeing_data.py:348`
+
+---
+
+## Utilities
+
+### _normalise_country()
+
+```python
+def _normalise_country(s: pd.Series) -> pd.Series
+```
+
+Normalizes country names for fuzzy matching: lowercase + strip whitespace.
+
+**File Location:** `01_download_wellbeing_data.py:313`
+
+---
+
+### _summary_table()
+
+```python
+def _summary_table(df: pd.DataFrame) -> pd.DataFrame
+```
+
+Generates descriptive statistics table for PERMA+H columns (mean, std, skew, count).
+
+**File Location:** `01_download_wellbeing_data.py:360`

@@ -1,0 +1,202 @@
+---
+title: 'download_wellbeing_data'
+description: 'Download and harmonize cross-national wellbeing data'
+---
+
+# Download Wellbeing Data
+
+Downloads and harmonizes cross-national wellbeing data for f-factor analysis from multiple sources.
+
+## Data Sources
+
+1. **World Happiness Report 2024 (WHR)** — GitHub CSV mirror
+   - Positive affect, Freedom to make life choices, Social support
+   - Ladder score (Cantril 0-10), Log GDP per capita
+   - Healthy life expectancy, Generosity, Perceptions of corruption
+
+2. **OECD Better Life Index (BLI)** — datasets/oecd-bli GitHub mirror
+   - Community, Health, Life Satisfaction, Work-Life Balance
+   - Jobs, Income, Education, Environment, Safety, Civic Engagement, Housing
+
+3. **World Bank Open Data API**
+   - Life expectancy, Unemployment rate, School enrollment
+   - Health expenditure % GDP
+
+## Configuration Constants
+
+```python
+DATA_DIR = Path("wellbeing_data")
+WHR_URL = "https://raw.githubusercontent.com/Escavine/World-Happiness/main/World-happiness-report-2024.csv"
+OECD_BLI_URL = "https://raw.githubusercontent.com/datasets/oecd-bli/master/data/oecd-bli.csv"
+```
+
+### PERMA+H Columns
+
+```python
+PERMA_COLS = [
+    "P_positive_emotion",
+    "E_engagement_autonomy",
+    "R_relationships",
+    "M_meaning_life_sat",
+    "A_accomplishment_gdp",
+    "H_health",
+]
+```
+
+## Functions
+
+### download_whr()
+
+Downloads the World Happiness Report 2024 data from GitHub.
+
+**Returns:** `pd.DataFrame`
+
+The raw WHR data with all original columns.
+
+**Example:**
+```python
+whr_raw = download_whr()
+print(f"Downloaded {len(whr_raw)} rows")
+```
+
+---
+
+### parse_whr()
+
+Renames WHR columns to PERMA+H schema.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Raw WHR DataFrame from download_whr()
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Processed DataFrame with PERMA+H column names. Handles two file shapes:
+- **Cross-section**: no year column, one row per country
+- **Panel**: has a year column; takes most recent observation per country
+
+**Example:**
+```python
+whr_parsed = parse_whr(whr_raw)
+print(whr_parsed.columns)
+```
+
+---
+
+### download_oecd_bli()
+
+Downloads the OECD Better Life Index data.
+
+**Returns:** `pd.DataFrame`
+
+The raw OECD BLI data in long format.
+
+**Example:**
+```python
+bli_raw = download_oecd_bli()
+if not bli_raw.empty:
+    print(f"Downloaded {len(bli_raw)} rows")
+```
+
+---
+
+### parse_oecd_bli()
+
+Pivots BLI long → wide format: one row per country, one column per indicator.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Raw OECD BLI DataFrame from download_oecd_bli()
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Wide-format DataFrame with one row per country. Keeps the average score across genders (Total) where applicable.
+
+**Example:**
+```python
+bli_wide = parse_oecd_bli(bli_raw)
+print(f"Processed {len(bli_wide)} countries")
+```
+
+---
+
+### download_world_bank()
+
+Fetches supplemental indicators from the World Bank API.
+
+**Returns:** `pd.DataFrame`
+
+Merged DataFrame with all World Bank indicators (life expectancy, unemployment, school enrollment, health expenditure).
+
+**Indicators:**
+- `SP.DYN.LE00.IN` → wb_life_expectancy
+- `SL.UEM.TOTL.ZS` → wb_unemployment_pct
+- `SE.PRM.NENR` → wb_primary_enrollment
+- `SH.XPD.CHEX.GD.ZS` → wb_health_expenditure_pct_gdp
+
+**Example:**
+```python
+wb = download_world_bank()
+print(f"Fetched data for {len(wb)} countries")
+```
+
+---
+
+### merge_sources()
+
+Merges WHR, OECD BLI, and World Bank data sources.
+
+<ParamField path="whr" type="pd.DataFrame" required>
+  Parsed WHR DataFrame
+</ParamField>
+
+<ParamField path="bli" type="pd.DataFrame" required>
+  Parsed OECD BLI DataFrame
+</ParamField>
+
+<ParamField path="wb" type="pd.DataFrame" required>
+  World Bank DataFrame
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Merged dataset with fuzzy country name matching (lowercase + strip).
+
+**Example:**
+```python
+merged = merge_sources(whr, bli, wb)
+out_path = Path("wellbeing_data/wellbeing_merged.csv")
+merged.to_csv(out_path, index=False)
+```
+
+## Outputs
+
+The script produces the following files in `wellbeing_data/`:
+
+- `WHR2024_raw.csv` — Raw World Happiness Report data
+- `oecd_bli_raw.csv` — Raw OECD Better Life Index data
+- `worldbank_raw.csv` — Raw World Bank indicators
+- `wellbeing_merged.csv` — **Main output** for analysis scripts
+
+## Main Function
+
+```python
+def main():
+    # 1. Download and parse WHR
+    whr_raw = download_whr()
+    whr = parse_whr(whr_raw)
+    
+    # 2. Download and parse OECD BLI
+    bli_raw = download_oecd_bli()
+    bli = parse_oecd_bli(bli_raw)
+    
+    # 3. Download World Bank data
+    wb = download_world_bank()
+    
+    # 4. Merge all sources
+    merged = merge_sources(whr, bli, wb)
+    
+    # 5. Save merged dataset
+    out_path = Path("wellbeing_data/wellbeing_merged.csv")
+    merged.to_csv(out_path, index=False)
+```

@@ -1,0 +1,284 @@
+---
+title: 'Data Download & Harmonization'
+description: 'Download and harmonize cross-national wellbeing data for f-factor analysis'
+---
+
+The first step in the f-factor analysis pipeline downloads and harmonizes wellbeing data from three public sources, mapping them to the **PERMA+H** framework for flourishing.
+
+## Overview
+
+Script: `01_download_wellbeing_data.py`
+
+This script retrieves country-level wellbeing indicators and harmonizes them into a unified dataset suitable for extracting the general factor of flourishing (f).
+
+## Data Sources
+
+### 1. World Happiness Report 2024 (WHR)
+
+Primary data source from Gallup World Poll, accessed via GitHub mirror:
+
+```python
+WHR_URL = (
+    "https://raw.githubusercontent.com/Escavine/World-Happiness/main/"
+    "World-happiness-report-2024.csv"
+)
+```
+
+**Available indicators:**
+- Positive affect
+- Freedom to make life choices
+- Social support
+- Ladder score (Cantril 0-10 life evaluation)
+- Log GDP per capita
+- Healthy life expectancy
+- Generosity
+- Perceptions of corruption
+
+### 2. OECD Better Life Index (BLI)
+
+Supplement with 11 wellbeing domains from OECD countries:
+
+```python
+OECD_BLI_URL = (
+    "https://raw.githubusercontent.com/datasets/oecd-bli/master/data/oecd-bli.csv"
+)
+```
+
+Provides: Community, Health, Life Satisfaction, Work-Life Balance, Jobs, Income, Education, Environment, Safety, Civic Engagement, Housing
+
+### 3. World Bank Open Data API
+
+Additional health and socioeconomic indicators:
+
+```python
+WB_INDICATORS = {
+    "SP.DYN.LE00.IN":     "wb_life_expectancy",
+    "SL.UEM.TOTL.ZS":     "wb_unemployment_pct",
+    "SE.PRM.NENR":        "wb_primary_enrollment",
+    "SH.XPD.CHEX.GD.ZS": "wb_health_expenditure_pct_gdp",
+}
+```
+
+## PERMA+H Mapping
+
+The script maps World Happiness Report columns to the PERMA+H theoretical framework:
+
+```python
+WHR_COLUMN_MAP = {
+    "positive affect":                    "P_positive_emotion",
+    "freedom to make life choices":       "E_engagement_autonomy",
+    "social support":                     "R_relationships",
+    "ladder score":                       "M_meaning_life_sat",
+    "log gdp per capita":                 "A_accomplishment_gdp",
+    "healthy life expectancy":            "H_health",
+    # Reference columns
+    "negative affect":                    "ref_negative_affect",
+    "generosity":                         "ref_generosity",
+    "perceptions of corruption":          "ref_corruption",
+}
+```
+
+| **Domain** | **PERMA+H Dimension** | **WHR Proxy** |
+|------------|------------------------|---------------|
+| **P** | Positive emotion | Positive affect |
+| **E** | Engagement | Freedom to make life choices (autonomy) |
+| **R** | Relationships | Social support |
+| **M** | Meaning | Ladder score (life satisfaction) |
+| **A** | Accomplishment | Log GDP per capita (material achievement) |
+| **H** | Health | Healthy life expectancy |
+
+<Warning>
+  The WHR data are **country-level averages** (ecological correlations), not individual survey responses. The positive manifold observed at this level may differ from individual-level structure.
+</Warning>
+
+## Download Workflow
+
+<Steps>
+  <Step title="Download WHR 2024 data">
+    Fetch the World Happiness Report CSV from GitHub and save to `wellbeing_data/WHR2024_raw.csv`.
+    
+    ```python
+    def download_whr() -> pd.DataFrame:
+        print("⬇  World Happiness Report 2024 …", end=" ", flush=True)
+        r = requests.get(WHR_URL, timeout=60, headers=HEADERS)
+        r.raise_for_status()
+        path = DATA_DIR / "WHR2024_raw.csv"
+        path.write_bytes(r.content)
+        df = pd.read_csv(path)
+        print(f"done. ({len(df)} rows, {len(df.columns)} cols)")
+        return df
+    ```
+  </Step>
+
+  <Step title="Parse and rename WHR columns">
+    Apply PERMA+H schema mapping, handling both cross-sectional and panel formats. If a year column is present, select the most recent observation per country.
+    
+    ```python
+    def parse_whr(df: pd.DataFrame) -> pd.DataFrame:
+        # Identify country column (flexible matching)
+        country_col = next(
+            (c for c in COUNTRY_COL_CANDIDATES if c in df.columns), None
+        )
+        
+        # Subset to most recent year if panel
+        if year_col:
+            df_cs = (
+                df.sort_values(year_col)
+                  .groupby(country_col, as_index=False)
+                  .last()
+            )
+        
+        # Rename columns to PERMA+H schema
+        rename = {}
+        for c in df_cs.columns:
+            key = c.strip().lower()
+            if key in WHR_COLUMN_MAP:
+                rename[c] = WHR_COLUMN_MAP[key]
+        df_cs = df_cs.rename(columns=rename)
+        return df_cs
+    ```
+  </Step>
+
+  <Step title="Download OECD BLI data">
+    Retrieve the Better Life Index CSV and pivot from long to wide format (one column per indicator).
+    
+    ```python
+    def parse_oecd_bli(df: pd.DataFrame) -> pd.DataFrame:
+        # Keep only "Total" inequality group (average across genders)
+        if inequality_col:
+            df = df[df[inequality_col].str.strip().str.lower() == "total"].copy()
+        
+        # Pivot to wide format
+        df_wide = (
+            df_sub
+            .groupby([country_col, "_label"])[value_col]
+            .mean()
+            .unstack("_label")
+            .reset_index()
+        )
+        return df_wide
+    ```
+  </Step>
+
+  <Step title="Fetch World Bank indicators">
+    Query the World Bank API for supplemental health and economic data (most recent value per country).
+    
+    ```python
+    def _fetch_wb_indicator(indicator: str, label: str) -> pd.DataFrame:
+        url = f"{WB_API}/{indicator}?format=json&per_page=300&mrv=1"
+        r = requests.get(url, timeout=30, headers=HEADERS)
+        payload = r.json()
+        records = payload[1] if len(payload) > 1 else []
+        rows = [
+            {
+                "country": rec["country"]["value"],
+                "iso3":    rec["countryiso3code"],
+                label:     rec["value"],
+            }
+            for rec in records if rec.get("value") is not None
+        ]
+        return pd.DataFrame(rows)
+    ```
+  </Step>
+
+  <Step title="Merge all sources">
+    Join WHR, OECD BLI, and World Bank data using fuzzy country name matching (lowercase + strip).
+    
+    ```python
+    def merge_sources(whr, bli, wb) -> pd.DataFrame:
+        merged = whr.copy()
+        merged["_key"] = merged["country"].str.lower().str.strip()
+        
+        if not bli.empty:
+            bli["_key"] = bli["country_oecd"].str.lower().str.strip()
+            merged = pd.merge(merged, bli, on="_key", how="left")
+        
+        if not wb.empty:
+            wb["_key"] = wb["country"].str.lower().str.strip()
+            merged = pd.merge(merged, wb, on="_key", how="left")
+        
+        return merged.drop(columns=["_key"])
+    ```
+  </Step>
+
+  <Step title="Save merged dataset">
+    Write the harmonized dataset to `wellbeing_data/wellbeing_merged.csv` for use in the analysis script.
+    
+    The script reports:
+    - Final shape (N countries × M variables)
+    - Missingness in PERMA+H columns
+    - Summary statistics (mean, std, skew)
+    - Complete case count (all 6 PERMA+H dimensions present)
+  </Step>
+</Steps>
+
+## Expected Outputs
+
+```
+wellbeing_data/
+├── WHR2024_raw.csv          # Raw World Happiness Report
+├── oecd_bli_raw.csv         # Raw OECD Better Life Index
+├── worldbank_raw.csv        # Raw World Bank indicators
+└── wellbeing_merged.csv     # ← Main output for analysis
+```
+
+**Key output columns in `wellbeing_merged.csv`:**
+
+- `country` (string)
+- `P_positive_emotion` (float)
+- `E_engagement_autonomy` (float)
+- `R_relationships` (float)
+- `M_meaning_life_sat` (float)
+- `A_accomplishment_gdp` (float)
+- `H_health` (float)
+- Supplemental OECD and World Bank indicators
+
+## Running the Script
+
+```bash
+python 01_download_wellbeing_data.py
+```
+
+Expected output:
+
+```
+════════════════════════════════════════════════════════════════
+  Wellbeing Data Downloader
+  Target: f-factor analysis (PERMA+H schema)
+════════════════════════════════════════════════════════════════
+
+⬇  World Happiness Report 2024 … done. (137 rows, 11 cols)
+   WHR cross-section: 137 countries
+   [WHR] Missingness in core PERMA+H columns:
+     E_engagement_autonomy               0 missing (0%)
+     R_relationships                     0 missing (0%)
+     M_meaning_life_sat                  0 missing (0%)
+     A_accomplishment_gdp                0 missing (0%)
+     H_health                            0 missing (0%)
+
+⬇  OECD Better Life Index … done. (8712 rows)
+   OECD BLI: 41 countries, ['oecd_community', 'oecd_education', ...]
+
+⬇  World Bank supplemental indicators …
+     wb_life_expectancy                  217 countries
+     wb_unemployment_pct                 181 countries
+     wb_primary_enrollment               141 countries
+     wb_health_expenditure_pct_gdp       189 countries
+
+🔀 Merging sources …
+
+✓  Merged dataset saved → wellbeing_data/wellbeing_merged.csv
+   Shape : 137 countries × 21 variables
+   Complete PERMA+H observations: 137 / 137
+
+   → Run 02_analyze_wellbeing_f.py to extract f and generate plots.
+```
+
+## Next Steps
+
+With `wellbeing_merged.csv` in hand, proceed to [Wellbeing f-Factor Analysis](/pipeline/wellbeing-analysis) to:
+
+1. Test for a positive manifold (all pairwise correlations > 0)
+2. Extract f as the first principal component (PC1)
+3. Compute country f-scores
+4. Generate visualizations (correlation matrices, scree plots, factor loadings)

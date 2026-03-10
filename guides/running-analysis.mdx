@@ -1,0 +1,317 @@
+---
+title: Running the Analysis
+description: Complete workflow for executing f-factor analysis from data download to final results
+---
+
+This guide walks you through the complete analysis pipeline, from downloading data to generating all figures and results.
+
+## Prerequisites
+
+Ensure you have Python 3.8+ and all required packages installed:
+
+```bash
+pip install pandas numpy matplotlib seaborn scikit-learn scipy requests
+```
+
+For the full Model 3-4 analysis:
+```bash
+pip install semopy  # Optional: for bifactor CFA
+```
+
+## Directory Structure
+
+The scripts will automatically create these directories:
+
+```
+project/
+├── 01_download_wellbeing_data.py
+├── 02_analyze_wellbeing_f.py
+├── 03_models_full_f.py
+├── 04_individual_level_f_analysis.py
+├── wellbeing_data/              # Created by script 01
+│   ├── WHR2024_raw.csv
+│   ├── oecd_bli_raw.csv
+│   ├── worldbank_raw.csv
+│   ├── wellbeing_merged.csv     # Main output
+│   └── wellbeing_scored.csv     # With f-scores
+└── wellbeing_figures/           # Created by script 02
+    ├── 01_correlation_matrix.png
+    ├── 02_scree_plot.png
+    ├── 03_factor_loadings.png
+    └── ...
+```
+
+## Complete Workflow
+
+<Steps>
+
+### Step 1: Download and Merge Data Sources
+
+Run the data download script first:
+
+```bash
+python 01_download_wellbeing_data.py
+```
+
+**What it does:**
+- Downloads World Happiness Report 2024 data from GitHub
+- Downloads OECD Better Life Index data
+- Fetches World Bank indicators via API
+- Maps columns to PERMA+H schema
+- Merges all sources on country names
+- Outputs `wellbeing_data/wellbeing_merged.csv`
+
+**Expected runtime:** 30-60 seconds (depending on network speed)
+
+**Expected output:**
+```
+⬇  World Happiness Report 2024 … done. (137 rows, 11 cols)
+   WHR cross-section: 137 countries
+   [WHR] Missingness in core PERMA+H columns:
+     P_positive_emotion              0 missing (0%)
+     E_engagement_autonomy           0 missing (0%)
+     ...
+
+⬇  OECD Better Life Index … done. (858 rows)
+   OECD BLI: 38 countries
+
+⬇  World Bank supplemental indicators …
+     wb_life_expectancy                   217 countries
+     wb_unemployment_pct                  183 countries
+     ...
+
+✓  Merged dataset saved → wellbeing_data/wellbeing_merged.csv
+   Shape : 137 countries × 22 variables
+   Complete PERMA+H observations: 137 / 137
+```
+
+<Warning>
+If the World Happiness Report URL changes, you may need to update `WHR_URL` in the script. The current mirror is `Escavine/World-Happiness` on GitHub.
+</Warning>
+
+### Step 2: Extract f and Generate Core Visualizations
+
+Run the main analysis:
+
+```bash
+python 02_analyze_wellbeing_f.py
+```
+
+**What it does:**
+- Loads merged data and checks for complete PERMA+H cases
+- Computes correlation matrix (tests positive manifold)
+- Runs PCA to extract PC1 as f proxy
+- Bootstraps loadings with 1000 resamples for 95% CIs
+- Computes country f-scores (z-standardized)
+- Generates 7 publication-quality figures
+- Saves scored dataset with f values
+
+**Expected runtime:** 15-30 seconds (bootstrap takes ~10s)
+
+**Key output files:**
+- `01_correlation_matrix.png` — Heatmap showing positive manifold
+- `02_scree_plot.png` — Eigenvalue spectrum
+- `03_factor_loadings.png` — PC1 loadings with bootstrap CIs
+- `04_country_f_scores.png` — Top/bottom 20 countries
+- `05_f_distribution.png` — Histogram + KDE
+- `06_scatter_matrix.png` — All pairwise relationships
+- `07_coupling_proxy.png` — Partial correlations
+
+**Expected console output:**
+```
+Loaded: 137 countries, 22 columns
+Complete PERMA+H cases: 137 / 137
+
+─────────────────────────────────────────────────────────
+  Correlation matrix (positive manifold test)
+─────────────────────────────────────────────────────────
+  Off-diagonal correlations: 15 pairs
+  Positive:  15 (100%)
+  Mean r:    0.723
+  Min r:     0.542
+  Max r:     0.891
+  ✓ Full positive manifold confirmed.
+
+─────────────────────────────────────────────────────────
+  PCA: extracting f as PC1
+─────────────────────────────────────────────────────────
+  PC1 (f) accounts for 68.3% of total variance
+  PC1 eigenvalue: 4.097  (Kaiser criterion > 1: ✓)
+
+  omega_h analogue (PC1 var / total var): 0.683
+  Paper's empirical range: 0.71 – 0.86
+  Note: country-level aggregate data tends to inflate this.
+
+  Bootstrapping PC1 loadings (n=1000) … done.
+
+  PC1 loadings (with 95% CI):
+    P: Positive Emotion          0.398  [0.312, 0.472]
+    E: Engagement (Autonomy)     0.405  [0.335, 0.463]
+    R: Relationships             0.423  [0.368, 0.475]
+    M: Meaning (Life Sat.)       0.431  [0.382, 0.477]
+    A: Accomplishment (GDP)      0.387  [0.318, 0.448]
+    H: Health                    0.420  [0.362, 0.471]
+```
+
+### Step 3: Run Full Mathematical Models (Optional)
+
+For the complete theoretical implementation:
+
+```bash
+python 03_models_full_f.py
+```
+
+**What it does:**
+- **Model 1:** Bifactor CFA via maximum likelihood
+- **Model 2:** Mutualism dynamical system (coupled ODEs)
+- **Model 3:** Lyapunov stability & resilience analysis
+- **Model 4:** Capabilities-adjusted f (Nussbaum thresholds)
+- Coupling strength parameter sweep
+
+**Expected runtime:** 2-5 minutes (optimization-heavy)
+
+**Key results:**
+```
+MODEL 1: Bifactor CFA
+  omega_h  = 0.742
+  ECV      = 0.835
+  RMSEA    = 0.067 (acceptable)
+
+MODEL 2: Mutualism System
+  Population simulation complete (n=200)
+  Positive manifold emerges from coupling (no latent variable)
+  PC1 variance in simulated population: 71.3%
+
+MODEL 3: Lyapunov Analysis
+  All equilibria stable (Re(λ) < 0)
+  Mean return time τ: 12.4
+  Mean resilience: 0.083
+
+MODEL 4: Capabilities-Adjusted f
+  Alkire-Foster M₀: 0.184
+  Countries passing all thresholds: 82/137 (60%)
+```
+
+### Step 4: Individual-Level Analysis (MIDUS Data)
+
+For individual-level replication:
+
+```bash
+python 04_individual_level_f_analysis.py
+```
+
+<Note>
+This script requires **MIDUS 2 data** (ICPSR 4652). See [Data Sources](/guides/data-sources) for download instructions. 
+
+To run without real data, change `MODE = "synthetic"` at the top of the script to generate simulated MIDUS-like data.
+</Note>
+
+**What it does:**
+- Loads Ryff Psychological Wellbeing Scale (6 subscales)
+- Extracts individual-level f via PCA
+- Runs bifactor CFA with `semopy` (if installed)
+- Analyzes demographic subgroups
+- Tests dual continua model (f vs psychopathology)
+
+**Expected runtime:** 20-40 seconds
+
+**Key findings (synthetic data):**
+```
+MIDUS-like data: (5000, 10)
+PC1 variance explained: 54.2%
+omega_h = 0.681
+Mean inter-subscale r: 0.549
+
+All correlations positive: ✓
+```
+
+</Steps>
+
+## Common Issues and Solutions
+
+### "File not found: wellbeing_data/wellbeing_merged.csv"
+
+**Solution:** Run `01_download_wellbeing_data.py` first. Scripts must be run in sequence.
+
+### "Connection timeout" during data download
+
+**Solution:** Check your internet connection. If World Happiness Report GitHub mirror is down, you can manually download from the [official WHR site](https://worldhappiness.report) and place it in `wellbeing_data/WHR2024_raw.csv`.
+
+### Low omega_h (less than 0.60) in individual-level data
+
+**Cause:** Individual-level data naturally has more noise than country aggregates. Country-level analysis inflates correlations through ecological aggregation (Simpson's paradox).
+
+**Expected:** omega_h ≈ 0.50-0.65 at individual level vs. 0.70-0.85 at country level.
+
+### "semopy not installed" warning
+
+**Solution:** This is optional. If you want bifactor CFA results:
+```bash
+pip install semopy
+```
+
+PCA results (PC1 as f proxy) are already provided and are the primary analysis.
+
+### Missing PERMA+H columns after data download
+
+**Cause:** Column names in WHR data may change between editions.
+
+**Solution:** Check `WHR_COLUMN_MAP` in `01_download_wellbeing_data.py`. The script includes multiple aliases for each column to handle naming variations.
+
+### "Not all correlations positive" warning
+
+**Cause:** May indicate data quality issues or incorrect variable mapping.
+
+**Check:**
+1. Are all variables scaled in the same direction? (higher = better wellbeing)
+2. Did script 01 correctly map columns?
+3. Are there extreme outliers?
+
+Run this diagnostic:
+```python
+import pandas as pd
+df = pd.read_csv('wellbeing_data/wellbeing_merged.csv')
+print(df[['P_positive_emotion', 'H_health']].describe())
+```
+
+## Next Steps
+
+After completing the analysis:
+
+1. **Interpret results** → See [Interpreting Results](/guides/interpreting-results)
+2. **Understand figures** → See [Visualization Guide](/guides/visualization)
+3. **Customize models** → See [Extending Models](/guides/extending-models)
+
+## Batch Execution
+
+To run the complete pipeline in one command:
+
+```bash
+python 01_download_wellbeing_data.py && \
+python 02_analyze_wellbeing_f.py && \
+python 03_models_full_f.py
+```
+
+Or create a shell script:
+
+```bash
+#!/bin/bash
+set -e  # Exit on error
+
+echo "Step 1: Downloading data..."
+python 01_download_wellbeing_data.py
+
+echo "Step 2: Running f-factor analysis..."
+python 02_analyze_wellbeing_f.py
+
+echo "Step 3: Full model implementation..."
+python 03_models_full_f.py
+
+echo "✓ Analysis complete. Results in wellbeing_figures/"
+```
+
+Save as `run_analysis.sh` and execute:
+```bash
+chmod +x run_analysis.sh
+./run_analysis.sh
+```

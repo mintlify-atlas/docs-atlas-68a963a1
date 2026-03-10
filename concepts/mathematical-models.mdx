@@ -1,0 +1,517 @@
+---
+title: 'Mathematical Models of Flourishing'
+description: 'Four formal models from the Flourishing paper - bifactor CFA, mutualism dynamics, Lyapunov stability, and capabilities adjustment'
+---
+
+## Overview
+
+The Flourishing project implements **four complementary mathematical models** from the paper "Toward f: A General Factor of Human Flourishing." Each model addresses a different question about the nature and dynamics of wellbeing.
+
+<Info>
+**Why four models?** No single framework captures all aspects of flourishing. These models span:
+- **Static structure** (Model 1: bifactor CFA)
+- **Generative dynamics** (Model 2: mutualism)
+- **Stability & resilience** (Model 3: Lyapunov analysis)
+- **Normative thresholds** (Model 4: capabilities)
+</Info>
+
+Full implementation: `03_models_full_f.py` (1,300+ lines)
+
+## Model 1: Bifactor CFA
+
+### Purpose
+Estimate the **strength of the general factor (f)** using confirmatory factor analysis with orthogonal specific factors.
+
+### Mathematical Specification
+
+$$
+y_{ij} = \mu_j + \lambda_j^f \cdot f_i + \lambda_j^{s_k} \cdot s_{ki} + \varepsilon_{ij}
+$$
+
+Where:
+- $y_{ij}$ = observed score for person $i$ on dimension $j$
+- $f_i$ = general flourishing factor (f) for person $i$
+- $s_{ki}$ = specific factor $k$ (hedonic, eudaimonic, social-physical)
+- $\lambda_j^f$ = loading of dimension $j$ on general factor
+- $\lambda_j^{s_k}$ = loading of dimension $j$ on its specific factor
+- $\varepsilon_{ij}$ = unique variance (measurement error)
+
+**Constraints**:
+- All factors orthogonal: $\text{Cov}(f, s_k) = 0$, $\text{Cov}(s_k, s_l) = 0$ for $k \neq l$
+- Each dimension loads on exactly one specific factor (bifactor structure)
+
+### Bifactor Domain Groupings
+
+From `03_models_full_f.py:88-94`:
+
+```python
+BIFACTOR_GROUPS = {
+    "hedonic":         ["P_positive_emotion", "M_meaning_life_sat"],
+    "eudaimonic":      ["E_engagement_autonomy", "A_accomplishment_gdp"],
+    "social_physical": ["R_relationships", "H_health"],
+}
+```
+
+### Omega Hierarchical (ω_h)
+
+The key output is **omega hierarchical**, which quantifies f's dominance:
+
+$$
+\omega_h = \frac{(\sum_j \lambda_j^f)^2}{(\sum_j \lambda_j^f)^2 + \sum_k (\sum_{j \in k} \lambda_j^{s_k})^2 + \sum_j \theta_j}
+$$
+
+- **Numerator**: Variance explained by general factor
+- **Denominator**: Total reliable variance (general + specific + unique)
+- **Empirical range**: 0.71 - 0.86 (paper findings)
+- **Interpretation**: If ω_h = 0.80, then 80% of reliable variance is general; subscale scores are nearly redundant
+
+### Maximum Likelihood Estimation
+
+Fitting function minimized:
+
+$$
+F_{ML} = \log|\Sigma(\theta)| + \text{tr}(S \cdot \Sigma(\theta)^{-1}) - \log|S| - p
+$$
+
+Where $S$ is the sample covariance matrix, $\Sigma(\theta)$ is the model-implied covariance.
+
+Implementation: `03_models_full_f.py:133-289`
+
+<Accordion title="When to use Model 1">
+**Use bifactor CFA when you need to**:
+- Quantify the relative importance of general vs domain-specific variance
+- Test whether subscale scores add information beyond a total score
+- Compute reliability coefficients (ω_h, ω_t, ECV)
+- Validate a psychometric instrument
+
+**Assumptions**:
+- Linear relationships between factors and observed scores
+- Multivariate normality (ML estimation)
+- Large sample size (N > 200 recommended)
+- Cross-sectional data (static model)
+</Accordion>
+
+---
+
+## Model 2: Mutualism Dynamical System
+
+### Purpose
+Show that a **positive manifold can emerge without a latent variable** through mutual reinforcement between wellbeing domains.
+
+<Note>
+This is the **generative model** - it explains _why_ f exists rather than just describing it. The mutualism hypothesis is the core theoretical contribution of the Flourishing framework.
+</Note>
+
+### Coupled Logistic Growth Equations
+
+$$
+\frac{dx_k}{dt} = a_k \cdot x_k \cdot \left(1 - \frac{x_k}{C_k} + \sum_{l \neq k} \frac{M_{kl} \cdot x_l}{C_k}\right) + \sigma_k \cdot \xi_k(t)
+$$
+
+Where:
+- $x_k(t)$ = level of wellbeing domain $k$ at time $t$
+- $a_k$ = intrinsic growth rate (how fast domain recovers when below capacity)
+- $C_k$ = carrying capacity (baseline equilibrium without mutualistic support)
+- $M_{kl}$ = mutualistic coupling strength (how much domain $l$ supports domain $k$)
+- $\sigma_k$ = noise amplitude
+- $\xi_k(t)$ = white noise process
+
+**Key insight**: The mutualism term $\sum_{l \neq k} M_{kl} x_l / C_k$ means each domain's growth is _enhanced_ by the current levels of other domains.
+
+### Equilibrium Analysis
+
+At equilibrium ($\frac{dx_k}{dt} = 0$ for all $k$), the deterministic system satisfies:
+
+$$
+1 - \frac{x_k^*}{C_k} + \sum_{l \neq k} \frac{M_{kl} x_l^*}{C_k} = 0
+$$
+
+Rearranging:
+
+$$
+x_k^* = C_k + \sum_{l \neq k} M_{kl} x_l^*
+$$
+
+**Matrix form**: $(I - \tilde{M}) x^* = C$, where $\tilde{M}_{kl} = M_{kl}$ for $k \neq l$, $\tilde{M}_{kk} = 0$.
+
+**Solution**: $x^* = (I - \tilde{M})^{-1} C$
+
+<Warning>
+**Critical property**: $x^* > C$ for all domains when mutualism is strong enough. The equilibrium is _lifted above_ the carrying capacity by mutual support. This is the mechanism by which interventions in one domain cascade to others.
+</Warning>
+
+Implementation: `03_models_full_f.py:348-543`
+
+### Calibration from Data
+
+From `03_models_full_f.py:503-542`:
+
+```python
+def calibrate_mutualism_from_data(X_raw, cols):
+    """
+    Calibrate mutualism parameters from observed country-level data.
+    
+    Carrying capacities C_k ← column means (baseline without mutual support)
+    Coupling M_kl ← scaled partial correlations (proxy for direct interactions)
+    Growth rates a_k ← set to 0.5 (not identifiable from cross-sectional data)
+    """
+    K = len(cols)
+    means = X_raw.mean(axis=0)
+    
+    # C slightly below observed means (mutualism lifts equilibrium)
+    C = means * 0.7
+    
+    # Coupling from partial correlations (control for other domains)
+    R = np.corrcoef(X_std.T)
+    P = inv(R)  # precision matrix
+    D = np.sqrt(np.diag(P))
+    partial_corr = -P / np.outer(D, D)
+    
+    # Scale to positive coupling strengths [0.05, 0.3]
+    M = np.abs(partial_corr)
+    M = 0.05 + 0.25 * (M - M.min()) / (M.max() - M.min())
+    np.fill_diagonal(M, 0.0)
+    
+    return MutualismSystem(K, a=0.5*np.ones(K), C=C, M=M)
+```
+
+### Emergent Positive Manifold
+
+The mutualism model generates a positive manifold through **parameter variation**:
+
+1. Simulate a population of individuals with slightly different $(C, a, M)$
+2. Each individual reaches a unique equilibrium $x^*_i$
+3. Across the population, $\text{Cov}(x_k^*, x_l^*) > 0$ for all pairs
+4. PCA on population equilibria yields a dominant PC1 (= f proxy)
+
+<Info>
+**No latent variable needed!** The positive manifold emerges from:
+- Variation in carrying capacities ("environmental" differences)
+- Mutual reinforcement dynamics (coupling)
+- Equilibrium lifting ($x^* > C$)
+</Info>
+
+Simulation: `03_models_full_f.py:454-494`
+
+<Accordion title="When to use Model 2">
+**Use mutualism dynamics when you need to**:
+- Model **temporal** changes in wellbeing (not just cross-sectional structure)
+- Simulate intervention effects (domain-specific → cascade to others)
+- Generate synthetic individual-level data with realistic correlation structure
+- Test whether observed patterns are consistent with network causality
+
+**Assumptions**:
+- Wellbeing domains influence each other bidirectionally
+- Mutual support is predominantly positive (competition/antagonism rare)
+- System reaches equilibrium within observable time frame
+- Parameter variation across individuals follows log-normal distributions
+</Accordion>
+
+---
+
+## Model 3: Lyapunov Stability & Resilience
+
+### Purpose
+Quantify the **stability and resilience** of flourishing equilibria using dynamical systems theory.
+
+### Jacobian at Equilibrium
+
+The **Jacobian matrix** $J$ captures how the system responds to small perturbations:
+
+$$
+J_{kl} = \frac{\partial \dot{x}_k}{\partial x_l} \bigg|_{x^*}
+$$
+
+**Diagonal elements** (self-regulation):
+
+$$
+J_{kk} = a_k \left(1 - \frac{2x_k^*}{C_k} + \sum_{l \neq k} \frac{M_{kl} x_l^*}{C_k}\right)
+$$
+
+**Off-diagonal elements** (cross-coupling):
+
+$$
+J_{kl} = \frac{a_k x_k^* M_{kl}}{C_k} \quad (k \neq l)
+$$
+
+Implementation: `03_models_full_f.py:406-430`
+
+### Stability Criterion
+
+Equilibrium $x^*$ is **locally asymptotically stable** if and only if:
+
+$$
+\text{Re}(\lambda_i) < 0 \quad \forall i
+$$
+
+where $\lambda_i$ are eigenvalues of $J$.
+
+**Dominant eigenvalue** $\lambda_1$ (largest real part) determines recovery dynamics:
+
+$$
+\tau = \frac{1}{|\text{Re}(\lambda_1)|} \quad \text{(return time)}
+$$
+
+- Small $|\lambda_1|$ → slow recovery (fragile system)
+- Large $|\lambda_1|$ → fast recovery (resilient system)
+
+### Basin of Attraction
+
+The **Lyapunov equation** defines an ellipsoidal basin:
+
+$$
+J^T P + P J = -Q
+$$
+
+Where:
+- $Q = I$ (positive definite matrix)
+- $P$ solution defines the basin: $\{\delta x : \delta x^T P \delta x \leq c\}$
+
+**Resilience** $R(x^*)$ is the size of the basin:
+
+$$
+R(x^*) = \frac{1}{\sqrt{\lambda_{\max}(P)}}
+$$
+
+Larger $R$ → system can withstand larger perturbations before shifting to a different equilibrium.
+
+Implementation: `03_models_full_f.py:640-691`
+
+### Country-Level Resilience Scores
+
+For each country $i$ with observed wellbeing vector $x_i$:
+
+1. Back-solve for carrying capacity: $C_i = (I - \tilde{M}) x_i$
+2. Construct country-specific system with $C_i$, shared $M$, $a$
+3. Compute Jacobian $J_i$ at $x_i$
+4. Extract resilience metrics: $\lambda_1$, $\tau$, $R(x_i)$
+
+<Info>
+**Predicted relationship**: Countries with higher f-scores should show:
+- More negative $\lambda_1$ (faster recovery)
+- Larger $R(x^*)$ (deeper basin)
+- Higher mean coupling $\bar{M}$ (more mutual support)
+
+These predictions are testable with longitudinal data.
+</Info>
+
+Implementation: `03_models_full_f.py:694-742`
+
+<Accordion title="When to use Model 3">
+**Use Lyapunov stability analysis when you need to**:
+- Assess whether observed wellbeing states are **stable equilibria** or transient
+- Quantify **recovery time** after shocks (recession, pandemic, life events)
+- Identify **vulnerable populations** (low resilience scores)
+- Test predictions about f → resilience relationship
+
+**Assumptions**:
+- System is in or near equilibrium at time of measurement
+- Linear approximation valid for small perturbations (local analysis)
+- Jacobian computed at true equilibrium (not measurement noise)
+- Same coupling matrix $M$ applies across individuals/countries (strong assumption!)
+</Accordion>
+
+---
+
+## Model 4: Capabilities-Adjusted Flourishing
+
+### Purpose
+Incorporate **Nussbaum's capability approach** - flourishing requires not just high average wellbeing but also meeting minimum thresholds in _all_ domains.
+
+### Mathematical Specification
+
+$$
+f_{\text{cap}} = f(x^*) \cdot \mathbb{1}[x_k^* \geq z_k \ \forall k] \cdot h(Q_i)
+$$
+
+Where:
+- $f(x^*)$ = standard psychometric f-score (PC1)
+- $\mathbb{1}[\cdot]$ = Nussbaum threshold indicator (non-compensatory)
+- $z_k$ = minimum threshold for dimension $k$
+- $h(Q_i)$ = capability set size proxy (balance across domains)
+
+**Key property**: Non-compensatory - you cannot "make up" for deprivation in one domain with excellence in another.
+
+### Nussbaum Thresholds
+
+From `03_models_full_f.py:950-956`:
+
+```python
+threshold_quantile = 0.25  # 25th percentile
+thresholds = np.quantile(X_raw, threshold_quantile, axis=0)
+
+# Indicator: pass if ALL dimensions ≥ threshold
+above_threshold = X_raw >= thresholds[np.newaxis, :]
+nussbaum_pass = above_threshold.all(axis=1).astype(float)
+```
+
+**Typical thresholds** (WHR scale, 25th percentile):
+- M (Life Satisfaction): 5.0 / 10
+- H (Life Expectancy): 62 years
+- R (Social Support): 0.80 / 1.0
+- A (Log GDP): 8.5 (≈ $5,000 per capita)
+
+### Alkire-Foster Deprivation Index
+
+Multidimensional poverty measure:
+
+$$
+M_0 = H \times A
+$$
+
+Where:
+- $H$ = Headcount ratio (proportion identified as deprived)
+- $A$ = Average intensity (mean deprivation among the deprived)
+
+**Dual cutoff method**:
+
+1. $g_{ij} = \mathbb{1}[x_{ij} < z_j]$ (deprived in dimension $j$?)
+2. $c_i = \sum_j w_j g_{ij}$ (weighted deprivation score, equal weights $w_j = 1/K$)
+3. $\rho_i = \mathbb{1}[c_i \geq k]$ (identified as deprived if score ≥ cutoff, e.g., $k = 1/3$)
+4. Censored score: $c_i^* = c_i \cdot \rho_i$ (zero out non-identified)
+
+Implementation: `03_models_full_f.py:924-1021`
+
+### Capability Set Size Proxy
+
+Approximate as **balance score** (inverse coefficient of variation):
+
+$$
+h_i = 1 - \frac{\text{CV}(x_i)}{\max(\text{CV})} \quad \text{where} \quad \text{CV}(x_i) = \frac{\sigma(x_i)}{\mu(x_i)}
+$$
+
+- High CV → unbalanced profile → smaller effective capability set
+- Low CV → balanced profile → larger capability set
+- Clip to $[0.01, 1.0]$
+
+<Warning>
+**Philosophical note**: The capability approach rejects pure aggregation. A person with near-zero Health cannot be considered "flourishing" even if other domains are excellent. Model 4 enforces this via the threshold indicator.
+</Warning>
+
+<Accordion title="When to use Model 4">
+**Use capabilities-adjusted f when you need to**:
+- Apply **normative standards** (not just describe empirical distribution)
+- Identify individuals below minimum thresholds for policy targeting
+- Assess **multidimensional poverty** in wellbeing space
+- Decompose deprivation by dimension (Alkire-Foster contributions)
+
+**Assumptions**:
+- Thresholds are meaningful (theory-driven or consensus-based)
+- Equal weights across dimensions (can be modified)
+- All dimensions are non-compensatory (capability requirement)
+- Cross-sectional data sufficient (doesn't model threshold dynamics)
+</Accordion>
+
+---
+
+## Model Relationships & Integration
+
+### When to Use Each Model
+
+| Model | Question | Output | Data Requirement |
+|-------|----------|--------|------------------|
+| **1. Bifactor CFA** | How strong is f? | ω_h, factor loadings | Cross-sectional, N > 200 |
+| **2. Mutualism** | Why does f exist? | Simulated trajectories, emergent correlations | Calibration sample or parameter assumptions |
+| **3. Lyapunov** | Is f stable? | Return time, resilience, basin depth | Cross-sectional + longitudinal (ideal) |
+| **4. Capabilities** | Who is below thresholds? | f_cap scores, deprivation profiles | Cross-sectional + threshold definitions |
+
+### The Coupling Strength Sweep
+
+All models integrated in the **optimal regime prediction**:
+
+<Info>
+**Core hypothesis**: There exists an optimal coupling strength $\bar{M}^*$ that jointly maximizes:
+1. f dominance (PC1 variance)
+2. Mean wellbeing level (equilibrium)
+3. Resilience (basin depth)
+
+Too little coupling → weak f, low wellbeing  
+Optimal coupling → strong f, high wellbeing, deep basin  
+Too much coupling → cascade risk (instability)
+</Info>
+
+Implementation: `03_models_full_f.py:1111-1220`
+
+```python
+def coupling_sweep(base_sys, n_points=15):
+    m_values = np.linspace(0.01, 0.5, n_points)
+    for m_scale in m_values:
+        # Scale coupling matrix
+        M_scaled = base_sys.M * (m_scale / base_sys.mean_coupling_strength())
+        
+        # Simulate population
+        equilibria = sys_test.simulate_population(n_individuals=80)
+        
+        # Measure PC1 variance
+        pct_pc1 = eigenvalues[0] / eigenvalues.sum() * 100
+        
+        # Measure resilience
+        lyap = lyapunov_analysis(sys_test, x_star)
+        resilience = lyap["resilience"]
+```
+
+### Model Predictions (Testable with Longitudinal Data)
+
+1. **Bifactor → Mutualism**: Higher ω_h predicts stronger coupling $\bar{M}$ in calibrated models
+2. **Mutualism → Lyapunov**: Stronger coupling predicts faster return time $\tau$ (up to stability boundary)
+3. **f → Resilience**: Higher f-scores correlate with larger basin depth $R(x^*)$
+4. **Capabilities → f**: Threshold violations attenuate the predictive validity of standard f
+
+---
+
+## Implementation Notes
+
+### Computational Considerations
+
+**Model 1 (Bifactor CFA)**:
+- Uses `scipy.optimize.minimize` with L-BFGS-B
+- Log-parameterizes unique variances for positivity constraint
+- Convergence sensitive to initialization (use PCA-based starting values)
+- Runtime: ~2-5 seconds for 6 dimensions, N=100-200
+
+**Model 2 (Mutualism)**:
+- Uses `scipy.integrate.solve_ivp` with RK45 adaptive stepping
+- Analytical equilibrium solution available ($(I - \tilde{M})^{-1} C$)
+- Population simulation: ~1-2 seconds for 200 individuals
+- Runtime bottleneck: many small ODE solves (parallelize if needed)
+
+**Model 3 (Lyapunov)**:
+- Uses `scipy.linalg.solve_continuous_lyapunov` for basin equation
+- Eigenvalue computation stable (no iterative solver)
+- Country-level resilience: ~5-10 seconds for 137 countries
+- Watch for numerical issues if $J$ near singular (coupling too strong)
+
+**Model 4 (Capabilities)**:
+- Pure NumPy, no optimization
+- Vectorized operations on entire dataset
+- Runtime: < 1 second for any reasonable sample size
+- Most expensive operation: quantile computation for thresholds
+
+### Reproducibility
+
+All scripts set `np.random.seed(42)` for:
+- Bootstrap resampling (CIs on factor loadings)
+- Population simulation (mutualism individual variation)
+- Synthetic data generation (testing without real data)
+
+---
+
+## Related Resources
+
+- [f-Factor](/concepts/f-factor) - What f is and how to measure it
+- [PERMA Framework](/concepts/perma-framework) - The six dimensions being modeled
+- [Data Sources](/concepts/data-sources) - Where to get empirical data for model fitting
+
+## References
+
+Full implementation: `03_models_full_f.py` (1,300+ lines)  
+Supporting analyses:
+- `02_analyze_wellbeing_f.py` - PCA-based f extraction (baseline for Model 1)
+- `04_individual_level_f_analysis.py` - Individual-level bifactor CFA with MIDUS 2
+
+**Key equations**:
+- Bifactor CFA: Lines 133-289
+- Mutualism dynamics: Lines 348-543
+- Lyapunov stability: Lines 640-861
+- Capabilities adjustment: Lines 924-1104
+- Coupling sweep integration: Lines 1111-1220

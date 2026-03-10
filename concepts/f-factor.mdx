@@ -1,0 +1,170 @@
+---
+title: "The f-Factor: General Factor of Flourishing"
+description: "Deep dive into the general factor of flourishing - what it is, how it is measured, and why it emerges from wellbeing data"
+---
+
+## What is the f-Factor?
+
+The **f-factor** (general factor of flourishing) is a latent dimension that captures what all measures of human wellbeing have in common. Just as the g-factor in intelligence represents general cognitive ability, f represents a person's overall capacity to flourish across multiple life domains.
+
+<Info>
+The f-factor explains **71-86% of variance** in wellbeing measures according to empirical studies, making it one of the most dominant psychological factors ever documented.
+</Info>
+
+## The Positive Manifold
+
+The f-factor emerges from a fundamental empirical observation called the **positive manifold**:
+
+> All dimensions of human wellbeing correlate positively with each other.
+
+This means:
+- People high in positive emotion tend to also be high in life satisfaction
+- Those with strong relationships also tend to have a sense of purpose
+- High engagement correlates with accomplishment
+- Health correlates with all psychological wellbeing dimensions
+
+### Ecological vs Individual-Level Correlations
+
+<Warning>
+**Critical distinction**: The positive manifold exists at both levels, but they tell different stories.
+</Warning>
+
+**Ecological (country-level) correlations**  
+When comparing countries, the positive manifold is _inflated_ due to aggregation:
+- Countries where citizens are happier also tend to have longer life expectancy, more social support, higher GDP
+- Aggregation removes within-group variance, strengthening apparent correlations
+- Scripts `01_download_wellbeing_data.py` and `02_analyze_wellbeing_f.py` analyze this level
+
+**Individual-level correlations**  
+Within a single population, the manifold is _attenuated_ but still present:
+- People scoring high on one wellbeing dimension tend to score higher on others
+- This is the level where mutualism dynamics actually operate
+- Script `04_individual_level_f_analysis.py` analyzes MIDUS 2 data at this level
+
+```python
+# From 02_analyze_wellbeing_f.py - checking the positive manifold
+off_diag = corr.values[np.tril_indices_from(corr.values, k=-1)]
+n_positive = (off_diag > 0).sum()
+print(f"Positive:  {n_positive} ({100*n_positive/len(off_diag):.0f}%)")
+print(f"Mean r:    {off_diag.mean():.3f}")
+if n_positive == len(off_diag):
+    print("✓ Full positive manifold confirmed.")
+```
+
+## How f is Measured
+
+### 1. Principal Component Analysis (PCA)
+
+The simplest extraction method treats f as **PC1** (first principal component):
+
+- Standardize all wellbeing dimensions
+- Run PCA on the correlation matrix
+- PC1 captures the shared variance = f proxy
+- PC1 loadings show how strongly each dimension reflects f
+
+```python
+# From 02_analyze_wellbeing_f.py
+pca = PCA()
+scores = pca.fit_transform(X_scaled)
+loadings = pca.components_.T        # shape (n_features, n_components)
+eigenvalues = pca.explained_variance_
+var_ratio = pca.explained_variance_ratio_
+
+# PC1 is the f proxy
+f_scores = scores[:, 0]
+print(f"PC1 (f) accounts for {var_ratio[0]*100:.1f}% of total variance")
+```
+
+**Sign correction**: PCA eigenvectors have arbitrary sign. The scripts anchor f to point in the "more flourishing" direction by ensuring the Meaning/Life Satisfaction dimension has a positive loading.
+
+### 2. Bifactor CFA (Confirmatory Factor Analysis)
+
+A more rigorous approach models f explicitly:
+
+$$
+y_{ij} = \mu_j + \lambda_j^f \cdot f_i + \lambda_j^{s_k} \cdot s_{ki} + \varepsilon_{ij}
+$$
+
+Where:
+- $f_i$ = general flourishing factor (f)
+- $s_{ki}$ = domain-specific factors (hedonic, eudaimonic, social-physical)
+- $\lambda_j^f$ = loading of dimension j on the general factor
+- All factors are orthogonal by construction
+
+Implemented in `03_models_full_f.py:130-289` (Model 1).
+
+## The omega_h Statistic
+
+**Omega hierarchical** ($\omega_h$) quantifies how much of the _reliable_ variance in wellbeing measures is due to the general factor f:
+
+$$
+\omega_h = \frac{(\sum \lambda_j^f)^2}{(\sum \lambda_j^f)^2 + \sum_k (\sum_{j \in k} \lambda_j^{s_k})^2 + \sum \theta_j}
+$$
+
+- Numerator: variance from general factor
+- Denominator: total variance (general + specific + error)
+- Empirical range: **0.71 - 0.86** (Flourishing paper)
+
+<Note>
+$\omega_h$ is always ≤ $\omega_t$ (total reliability). A high $\omega_h$ means the general factor dominates, making subscale scores nearly redundant.
+</Note>
+
+At the country level (ecological data), $\omega_h$ analogue is approximated by PC1 variance ratio:
+
+```python
+# From 02_analyze_wellbeing_f.py
+omega_h_analogue = var_ratio[0]  # PC1 var / total var
+print(f"omega_h analogue: {var_ratio[0]:.3f}")
+print(f"Paper's empirical range: 0.71 – 0.86")
+print(f"Note: country-level aggregate data tends to inflate this.")
+```
+
+## Why Does f Exist?
+
+Two competing theoretical explanations:
+
+### Latent Variable Model (Traditional)
+f is a _real causal entity_ that influences all wellbeing dimensions from "above":
+- Common cause structure
+- Interventions targeting f should lift all domains
+- Standard psychometric interpretation
+
+### Mutualism Model (Network/Dynamical)
+f is an _emergent statistical pattern_ arising from mutual reinforcement:
+- No single latent cause
+- Wellbeing domains support each other through positive feedback loops
+- f is real but not reified - it's the _pattern_ of coupling strength
+- See [Mathematical Models](/concepts/mathematical-models) for the dynamical system implementation
+
+<Info>
+**Key insight**: Both models predict the same positive manifold, but make different predictions about:
+- Intervention effects (domain-specific vs cascade effects)
+- Temporal dynamics (static vs adaptive)
+- Individual differences (trait vs state × dynamics)
+</Info>
+
+## Extracting f from Your Data
+
+To compute f-scores from your own wellbeing data:
+
+1. **Standardize** all dimensions (z-score)
+2. **Check positive manifold**: verify all pairwise correlations > 0
+3. **Run PCA**: extract PC1 as f proxy
+4. **Sign-correct**: ensure higher scores = more flourishing
+5. **Bootstrap CIs**: quantify uncertainty in loadings (n=1,000 recommended)
+
+Full implementation: `02_analyze_wellbeing_f.py:210-398`
+
+## Related Concepts
+
+- [PERMA Framework](/concepts/perma-framework) - The six dimensions from which f emerges
+- [Mathematical Models](/concepts/mathematical-models) - Four formal models of f
+- [Data Sources](/concepts/data-sources) - Where to get wellbeing data for f analysis
+
+## References
+
+From script headers:
+- **Bifactor CFA**: Maximum-likelihood estimation (Model 1 in `03_models_full_f.py`)
+- **Ecological correlations**: WHR 2024 country-level data (`01_download_wellbeing_data.py`)
+- **Individual-level replication**: MIDUS 2 Ryff PWB scales (`04_individual_level_f_analysis.py`)
+- **omega_h range**: 0.71-0.86 reported in original Flourishing paper

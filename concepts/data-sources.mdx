@@ -1,0 +1,657 @@
+---
+title: 'Data Sources for f-Factor Analysis'
+description: 'Comprehensive guide to accessing and harmonizing wellbeing datasets - WHR, OECD, World Bank, and MIDUS'
+---
+
+## Overview
+
+The Flourishing project integrates **four major data sources** for f-factor analysis:
+
+| Source | Level | Coverage | Access | Script |
+|--------|-------|----------|--------|--------|
+| **World Happiness Report 2024** | Country | ~137 countries | GitHub mirror (free) | `01_download_wellbeing_data.py` |
+| **OECD Better Life Index** | Country | 38 OECD countries | GitHub mirror (free) | `01_download_wellbeing_data.py` |
+| **World Bank Open Data** | Country | 200+ countries/territories | REST API (free) | `01_download_wellbeing_data.py` |
+| **MIDUS 2** | Individual | ~4,963 US adults | ICPSR (registration required) | `04_individual_level_f_analysis.py` |
+
+<Info>
+**Two analysis levels**:
+- **Ecological (country-level)**: WHR + OECD + World Bank → `wellbeing_merged.csv`
+- **Individual-level**: MIDUS 2 → `midus_scored.csv`
+
+Ecological correlations are _inflated_ due to aggregation. Both levels are needed to validate the mutualism model.
+</Info>
+
+---
+
+## World Happiness Report 2024 (WHR)
+
+### Description
+
+The **primary data source** for country-level PERMA+H analysis. WHR aggregates Gallup World Poll data into national averages.
+
+**Key features**:
+- **N**: ~137 countries (varies by year)
+- **Time period**: 2021-2023 (3-year rolling averages)
+- **Measurement**: Gallup World Poll telephone/face-to-face surveys
+- **Sample size**: ~1,000-3,000 respondents per country per year
+- **Weighting**: Probability sampling, calibrated to population
+
+### Variables Mapped to PERMA+H
+
+From `01_download_wellbeing_data.py:22-42`:
+
+```python
+WHR_COLUMN_MAP = {
+    # PERMA+H core
+    "positive affect":                    "P_positive_emotion",
+    "freedom to make life choices":       "E_engagement_autonomy",
+    "social support":                     "R_relationships",
+    "ladder score":                       "M_meaning_life_sat",
+    "life ladder":                        "M_meaning_life_sat",  # panel edition
+    "log gdp per capita":                 "A_accomplishment_gdp",
+    "healthy life expectancy at birth":   "H_health",
+    "healthy life expectancy":            "H_health",  # mirror variant
+    # Reference / robustness columns
+    "negative affect":                    "ref_negative_affect",
+    "generosity":                         "ref_generosity",
+    "perceptions of corruption":          "ref_corruption",
+}
+```
+
+<Accordion title="Variable Descriptions">
+**Cantril Ladder (M - Meaning)**  
+Question: "Please imagine a ladder with steps numbered from 0 at the bottom to 10 at the top. The top represents the best possible life for you and the bottom the worst possible life. On which step of the ladder would you say you personally feel you stand at this time?"  
+Scale: 0-10 (continuous)  
+WHR column: `Ladder score` or `Life Ladder`
+
+**Social Support (R - Relationships)**  
+Question: "If you were in trouble, do you have relatives or friends you can count on to help you whenever you need them, or not?"  
+Scale: 0 (no) / 1 (yes), aggregated to proportion  
+WHR column: `Social support`
+
+**Freedom to Make Life Choices (E - Engagement)**  
+Question: "Are you satisfied or dissatisfied with your freedom to choose what you do with your life?"  
+Scale: 0 (dissatisfied) / 1 (satisfied), aggregated  
+WHR column: `Freedom to make life choices`
+
+**Positive Affect (P - Positive Emotion)**  
+Composite: "Did you experience [happiness/enjoyment/smiling or laughing] a lot yesterday?"  
+Scale: 0-1 proportion responding "yes" to ≥1 item  
+WHR column: `Positive affect` ⚠️ _Often missing in GitHub mirrors_
+
+**Healthy Life Expectancy (H - Health)**  
+Source: WHO Global Health Observatory, calibrated to Gallup sample  
+Scale: Years (typically 40-80 range)  
+WHR column: `Healthy life expectancy` or `Healthy life expectancy at birth`
+
+**Log GDP per Capita (A - Accomplishment)**  
+Source: World Bank national accounts, PPP-adjusted  
+Scale: Natural log of GDP per capita  
+WHR column: `Log GDP per capita`
+</Accordion>
+
+### How to Access
+
+<Warning>
+**Official WHR data** is released annually at worldhappiness.report as Excel files. The project uses a **GitHub mirror** for programmatic access, which may have slightly different column names or missing variables.
+</Warning>
+
+#### Option 1: GitHub Mirror (Recommended)
+
+```python
+WHR_URL = (
+    "https://raw.githubusercontent.com/Escavine/World-Happiness/main/"
+    "World-happiness-report-2024.csv"
+)
+
+import requests
+import pandas as pd
+
+response = requests.get(WHR_URL, timeout=60)
+df_whr = pd.read_csv(response.content)
+```
+
+Mirror repository: [Escavine/World-Happiness](https://github.com/Escavine/World-Happiness)
+
+#### Option 2: Official WHR Website
+
+1. Visit [worldhappiness.report](https://worldhappiness.report)
+2. Navigate to "Data" section
+3. Download "Appendix 1: Full dataset" (Excel format)
+4. Convert to CSV manually
+
+### Data Structure
+
+**Shape**: 137 rows (countries) × ~20 columns  
+**Format**: Cross-sectional (one observation per country, most recent 3-year average)  
+**Missing data**: ~10-20% for Positive Affect, less than 5% for other PERMA+H columns
+
+```python
+# From 01_download_wellbeing_data.py - missingness report
+def _report_missingness(df: pd.DataFrame, cols: list):
+    for c in cols:
+        n = df[c].isna().sum()
+        pct = 100 * n / len(df)
+        print(f"  {c:<35} {n:>3} missing ({pct:.0f}%)")
+
+# Typical output:
+# P_positive_emotion              28 missing (20%)
+# E_engagement_autonomy            5 missing (4%)
+# R_relationships                  3 missing (2%)
+# M_meaning_life_sat               0 missing (0%)
+# A_accomplishment_gdp             2 missing (1%)
+# H_health                         8 missing (6%)
+```
+
+---
+
+## OECD Better Life Index (BLI)
+
+### Description
+
+**Supplemental data** for OECD member countries, providing 11 wellbeing dimensions beyond WHR coverage.
+
+**Key features**:
+- **N**: 38 OECD countries
+- **Time period**: Latest available year (updated annually)
+- **Measurement**: National statistics agencies (official government data)
+- **Format**: Long format (Country × Indicator × Inequality dimension)
+
+### Variables Mapped to PERMA+H
+
+From `01_download_wellbeing_data.py:94-104`:
+
+```python
+OECD_INDICATOR_MAP = {
+    "Life satisfaction":      "oecd_life_satisfaction",  # M
+    "Community":              "oecd_community",          # R
+    "Work-life balance":      "oecd_work_life_balance",  # E
+    "Health status":          "oecd_health_status",      # H
+    "Jobs and earnings":      "oecd_jobs",               # A
+    "Education and skills":   "oecd_education",          # A
+    "Income and wealth":      "oecd_income",             # A
+    "Safety":                 "oecd_safety",             # General
+}
+```
+
+<Note>
+OECD BLI indicators are **normalized to 0-10 scale** by OECD. Higher values always indicate better outcomes (some raw indicators are reversed before normalization).
+</Note>
+
+### How to Access
+
+#### GitHub Mirror (Used by Scripts)
+
+```python
+OECD_BLI_URL = (
+    "https://raw.githubusercontent.com/datasets/oecd-bli/master/data/oecd-bli.csv"
+)
+
+df_oecd = pd.read_csv(OECD_BLI_URL, low_memory=False)
+```
+
+Mirror repository: [datasets/oecd-bli](https://github.com/datasets/oecd-bli)
+
+#### Official OECD Website
+
+1. Visit [oecdbetterlifeindex.org](https://www.oecdbetterlifeindex.org)
+2. Click "Download data" in footer
+3. Select CSV format
+4. Contains same data as GitHub mirror
+
+### Data Structure
+
+**Shape (raw)**: ~2,000 rows × 5 columns (long format)  
+**Columns**: `Country`, `Indicator`, `Inequality`, `Unit`, `Value`  
+**Pivoted shape**: 38 countries × 11 indicators
+
+```python
+# From 01_download_wellbeing_data.py:217-258 - pivot logic
+def parse_oecd_bli(df: pd.DataFrame) -> pd.DataFrame:
+    # Keep "Total" inequality category (average across gender/income groups)
+    df = df[df["Inequality"].str.strip().str.lower() == "total"]
+    
+    # Pivot: one row per country, one column per indicator
+    df_wide = (
+        df.groupby(["Country", "Indicator"])["Value"]
+        .mean()
+        .unstack("Indicator")
+        .reset_index()
+    )
+    return df_wide
+```
+
+---
+
+## World Bank Open Data API
+
+### Description
+
+**Supplemental indicators** for health and economic outcomes, filling gaps in WHR coverage.
+
+**Key features**:
+- **N**: 200+ countries and territories
+- **Time period**: Latest available year (MRV = Most Recent Value API parameter)
+- **Measurement**: National statistics from member countries
+- **Access**: RESTful API, JSON responses
+
+### Indicators Fetched
+
+From `01_download_wellbeing_data.py:106-112`:
+
+```python
+WB_INDICATORS = {
+    "SP.DYN.LE00.IN":     "wb_life_expectancy",              # H
+    "SL.UEM.TOTL.ZS":     "wb_unemployment_pct",            # A
+    "SE.PRM.NENR":        "wb_primary_enrollment",          # A (education)
+    "SH.XPD.CHEX.GD.ZS": "wb_health_expenditure_pct_gdp",  # H (policy input)
+}
+```
+
+<Accordion title="World Bank Indicator Codes">
+**SP.DYN.LE00.IN** - Life expectancy at birth, total (years)  
+Definition: Number of years a newborn would live if mortality patterns remain constant  
+Source: UN Population Division estimates  
+Coverage: 200+ countries, updated annually
+
+**SL.UEM.TOTL.ZS** - Unemployment, total (% of labor force)  
+Definition: ILO modeled estimate of unemployed persons as % of labor force  
+Source: ILO ILOSTAT database  
+Coverage: 180+ countries
+
+**SE.PRM.NENR** - School enrollment, primary (% net)  
+Definition: Ratio of children of official school age enrolled in primary school  
+Source: UNESCO Institute for Statistics  
+Coverage: 150+ countries
+
+**SH.XPD.CHEX.GD.ZS** - Current health expenditure (% of GDP)  
+Definition: Level of current health expenditure expressed as % of GDP  
+Source: WHO Global Health Expenditure Database  
+Coverage: 190+ countries
+</Accordion>
+
+### How to Access
+
+#### Via REST API (Used by Scripts)
+
+```python
+WB_API = "https://api.worldbank.org/v2/country/all/indicator"
+
+def fetch_indicator(indicator_code: str) -> pd.DataFrame:
+    url = f"{WB_API}/{indicator_code}?format=json&per_page=300&mrv=1"
+    response = requests.get(url, timeout=30)
+    payload = response.json()
+    
+    # Response format: [metadata, data_array]
+    records = payload[1] if len(payload) > 1 else []
+    
+    rows = [
+        {
+            "country": rec["country"]["value"],
+            "iso3": rec["countryiso3code"],
+            "value": rec["value"],
+            "year": rec.get("date"),
+        }
+        for rec in records
+        if rec.get("value") is not None
+    ]
+    return pd.DataFrame(rows)
+```
+
+Full implementation: `01_download_wellbeing_data.py:263-308`
+
+#### Via databank.worldbank.org
+
+1. Visit [databank.worldbank.org](https://databank.worldbank.org)
+2. Select "World Development Indicators" database
+3. Choose countries and indicators manually
+4. Download as CSV
+
+<Warning>
+**API Rate Limits**: World Bank API has no official rate limit but throttles aggressive usage. Scripts add `timeout=30` to prevent hanging.
+</Warning>
+
+### Data Structure
+
+**Shape**: Varies by indicator (150-200 countries each)  
+**Merged shape**: ~160 countries × 4 indicators  
+**Missing data**: ~20-30% for school enrollment (many countries don't report)
+
+---
+
+## MIDUS 2: Individual-Level Data
+
+### Description
+
+**Individual-level wellbeing data** from the Midlife in the United States longitudinal study (Wave 2, 2004-2006).
+
+<Info>
+**Why MIDUS?** This is the **gold standard** for testing the mutualism model at the individual level. Country-level data (WHR) cannot distinguish between:
+- True within-person dynamics (mutualism)
+- Ecological correlations (between-country differences)
+
+MIDUS provides within-population variation with the same questionnaires across 5,000 people.
+</Info>
+
+**Key features**:
+- **N**: 4,963 (core sample, Wave 2)
+- **Population**: US adults aged 35-86 in 2004
+- **Design**: Longitudinal (linkable to Wave 1: 1995-96, Wave 3: 2013-14)
+- **Measurement**: Telephone + mail survey (SAQ)
+- **Response rate**: 75% from Wave 1 participants
+
+### Ryff Psychological Wellbeing Scale
+
+MIDUS includes **6 composite scores** from Carol Ryff's Psychological Wellbeing Scale:
+
+| Variable | Ryff Dimension | PERMA | Scale | Items |
+|----------|---------------|-------|-------|-------|
+| `B1SPWBA1` | Autonomy | E | 1-7 | 3 |
+| `B1SPWBE1` | Environmental Mastery | A | 1-7 | 3 |
+| `B1SPWBG1` | Personal Growth | E | 1-7 | 3 |
+| `B1SPWBR1` | Positive Relations | R | 1-7 | 3 |
+| `B1SPWBU1` | Purpose in Life | M | 1-7 | 3 |
+| `B1SPWBS1` | Self-Acceptance | P | 1-7 | 3 |
+
+**Composite construction**:
+- Each subscale = mean of 3 items (sum ÷ 3)
+- Original items: 7-point Likert (1 = strongly disagree → 7 = strongly agree)
+- Negative items reverse-coded before averaging
+
+### Auxiliary Variables
+
+From `04_individual_level_f_analysis.py:163-164`:
+
+```python
+AUX_COLS = ["B1SPOSPA", "B1SNEGAF", "B1SB1", "B1SA11W"]
+```
+
+**B1SPOSPA** - Positive Affect  
+Composite: Mean of 6 items ("cheerful", "in good spirits", "extremely happy", "calm", "satisfied", "full of life")  
+Scale: 1 (none of the time) → 5 (all of the time)  
+Correlation with Ryff mean: ~0.55
+
+**B1SNEGAF** - Negative Affect  
+Composite: Mean of 6 items ("nervous", "hopeless", "restless", "sad", "worthless", "everything is an effort")  
+Scale: 1 (none of the time) → 5 (all of the time)  
+Used as **p-factor proxy** (psychopathology)  
+Correlation with Ryff mean: ~-0.45
+
+**B1SB1** - Life Satisfaction  
+Single item: "Please think about your life as a whole. How satisfied are you with it?"  
+Scale: 0 (worst possible) → 10 (best possible)  
+Correlation with Ryff Purpose: ~0.60
+
+**B1SA11W** - Self-Rated Health  
+Single item: "In general, would you say your physical health is..."  
+Original scale: 1 (excellent) → 5 (poor)  
+**Scripts reverse-code** to 5 (excellent) → 1 (poor) for consistency  
+Correlation with Ryff mean: ~0.35
+
+### How to Access
+
+<Warning>
+**Registration required**: MIDUS data is **publicly available but gated**. You must create a free ICPSR account and agree to terms of use.
+</Warning>
+
+#### Step-by-Step Download
+
+1. **Create ICPSR account**  
+   Visit [icpsr.umich.edu](https://www.icpsr.umich.edu/web/pages/ICPSR/) → "Create an Account" (free)  
+   Verify email address
+
+2. **Navigate to MIDUS 2 study page**  
+   Direct link: [icpsr.umich.edu/web/NACDA/studies/4652](https://www.icpsr.umich.edu/web/NACDA/studies/4652)  
+   Title: "Midlife in the United States (MIDUS 2), 2004-2006"
+
+3. **Download main data file**  
+   Click "Download" → "Delimited" format → "DS0001: Main Data"  
+   File: `ICPSR_04652-0001-Data.tsv` (~4 MB compressed)
+
+4. **Agree to terms**  
+   Standard ICPSR Restricted Use Agreement:
+   - No redistribution of data files
+   - No attempt to identify respondents
+   - Proper citation in publications
+
+5. **Extract and place file**  
+   ```bash
+   unzip ICPSR_04652-0001-Data.zip
+   mv ICPSR_04652-0001-Data.tsv ~/workspace/source/04652-0001-Data.tsv
+   ```
+
+#### Synthetic Data Alternative
+
+From `04_individual_level_f_analysis.py:221-290`:
+
+```python
+MODE = "synthetic"  # Set at top of script
+
+# Generates ~5,000 simulated respondents matching MIDUS 2 psychometric properties:
+# - Correlation matrix from Springer & Hauser (2006)
+# - Means/SDs from MIDUS 2 documentation
+# - Slight negative skew (ceiling effects)
+df_synthetic = generate_synthetic_midus(n=5000)
+```
+
+<Note>
+Synthetic data is useful for **code testing** but cannot replace real MIDUS for publication-quality results. Inter-subscale correlations are simulated to match literature values but lack real measurement error structure.
+</Note>
+
+### Data Structure
+
+**Shape**: 4,963 rows (respondents) × 1,800+ columns (full survey)  
+**Relevant columns**: ~20 (Ryff subscales + auxiliary + demographics)  
+**Missing data**: ~10% incomplete on Ryff subscales (complete-case analysis: N ≈ 4,470)
+
+```python
+# From 04_individual_level_f_analysis.py:342-362 - preprocessing
+def preprocess(df: pd.DataFrame):
+    # Ryff subscales stored as 3-item *sums* (range 3-21)
+    # Convert to means (range 1-7)
+    for col in RYFF_COLS:
+        df[col] = df[col] / 3.0
+    
+    # Reverse-code health
+    df["B1SA11W"] = 6 - df["B1SA11W"]
+    
+    # Drop incomplete cases
+    df_clean = df.dropna(subset=RYFF_COLS)
+    print(f"Complete cases: {len(df_clean):,} / {len(df):,}")
+    
+    return df_clean
+```
+
+---
+
+## Data Harmonization Pipeline
+
+### Merging Strategy
+
+From `01_download_wellbeing_data.py:318-343`:
+
+```python
+def merge_sources(whr, bli, wb):
+    # 1. Start with WHR as base (most complete PERMA+H coverage)
+    merged = whr.copy()
+    merged["_key"] = merged["country"].str.lower().str.strip()
+    
+    # 2. Left join OECD BLI (supplements OECD countries)
+    if not bli.empty:
+        bli["_key"] = bli["country_oecd"].str.lower().str.strip()
+        merged = pd.merge(merged, bli, on="_key", how="left")
+    
+    # 3. Left join World Bank (fills missing health/economic data)
+    if not wb.empty:
+        wb["_key"] = wb["country"].str.lower().str.strip()
+        merged = pd.merge(merged, wb, on="_key", how="left")
+    
+    return merged.drop(columns=["_key"])
+```
+
+**Key decisions**:
+- **WHR as base**: Maximizes coverage (137 countries vs 38 OECD)
+- **Fuzzy matching**: Lowercase + strip whitespace (handles "United States" vs "United states")
+- **Left join**: Never lose WHR countries (supplemental sources only add columns)
+- **No imputation**: Missing values left as NaN (complete-case analysis downstream)
+
+### Column Naming Convention
+
+| Prefix | Source | Example |
+|--------|--------|----------|
+| `P_`, `E_`, `R_`, `M_`, `A_`, `H_` | WHR (PERMA+H primary) | `M_meaning_life_sat` |
+| `oecd_` | OECD BLI | `oecd_life_satisfaction` |
+| `wb_` | World Bank | `wb_life_expectancy` |
+| `ref_` | Reference (robustness checks) | `ref_negative_affect` |
+
+### Output Files
+
+From `01_download_wellbeing_data.py:369-411` (main function):
+
+```bash
+wellbeing_data/
+├── WHR2024_raw.csv              # Raw download from GitHub mirror
+├── oecd_bli_raw.csv             # Raw OECD long format
+├── worldbank_raw.csv            # Raw World Bank API responses
+└── wellbeing_merged.csv         # ✓ Final harmonized dataset (use this!)
+```
+
+**wellbeing_merged.csv structure**:
+- **Shape**: 137 countries × ~30 columns
+- **PERMA+H columns**: 6 core dimensions (P, E, R, M, A, H)
+- **Supplemental**: 11 OECD indicators, 4 World Bank indicators
+- **Identifiers**: `country` (name), optional `year` if panel format
+- **Missing**: ~10-15% average across PERMA+H, ~30% for supplements
+
+---
+
+## Data Quality Notes
+
+### Known Issues
+
+<Warning>
+**Positive Affect Missing**: WHR GitHub mirrors often exclude the "Positive affect" column. Check missingness report:
+```python
+print(f"P_positive_emotion: {df['P_positive_emotion'].isna().sum()} / {len(df)} missing")
+```
+If >50% missing, exclude P from analysis or impute from life satisfaction.
+</Warning>
+
+**Country Name Variations**:
+- WHR: "United States", OECD: "United States of America", WB: "United States"
+- Scripts use fuzzy matching (lowercase + strip) but edge cases exist
+- Check `_report_missingness()` output for unexpected gaps
+
+**Temporal Mismatch**:
+- WHR: 3-year average (2021-2023)
+- OECD: Latest year varies by indicator (2020-2023)
+- World Bank: MRV (could be 2015 for some countries/indicators)
+- Not a problem for cross-sectional analysis, but be cautious with causal interpretation
+
+**Scale Differences**:
+- WHR Life Satisfaction: 0-10 continuous
+- MIDUS Life Satisfaction: 0-10 continuous (comparable!)
+- WHR Healthy Life Expectancy: 40-80 years
+- MIDUS Self-Rated Health: 1-5 Likert (not comparable without scaling)
+
+### Recommended Preprocessing
+
+From `02_analyze_wellbeing_f.py:118-143`:
+
+```python
+def load_data():
+    df = pd.read_csv("wellbeing_data/wellbeing_merged.csv")
+    
+    # 1. Select PERMA+H columns present in data
+    present = [c for c in PERMA_COLS if c in df.columns]
+    
+    # 2. Complete-case analysis (drop rows with ANY missing)
+    df_clean = df[["country"] + present].dropna(subset=present)
+    print(f"Complete PERMA+H cases: {len(df_clean)} / {len(df)}")
+    
+    # 3. Standardize (z-score) - CRITICAL for PCA
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(df_clean[present].values)
+    
+    return df_clean, X_scaled, present
+```
+
+**Why standardize?**
+- Dimensions have different scales (0-1 for social support, 0-10 for life satisfaction)
+- PCA is scale-sensitive (large-scale variables dominate)
+- f-factor loadings interpretable as correlations after standardization
+
+---
+
+## Citation Guidelines
+
+### World Happiness Report 2024
+
+```
+Helliwell, J. F., Layard, R., Sachs, J. D., De Neve, J.-E., Aknin, L. B., 
+Wang, S., & Paculor, S. (Eds.). (2024). World Happiness Report 2024. 
+University of Oxford: Wellbeing Research Centre.
+```
+
+Mirror citation (if using GitHub data):
+```
+Escavine. (2024). World Happiness Report 2024 [Dataset]. GitHub. 
+https://github.com/Escavine/World-Happiness
+```
+
+### OECD Better Life Index
+
+```
+OECD (2024). OECD Better Life Index. OECD Publishing, Paris.
+https://www.oecdbetterlifeindex.org
+```
+
+### World Bank Open Data
+
+```
+World Bank (2024). World Development Indicators [Dataset]. 
+The World Bank Group. https://databank.worldbank.org
+
+[Include specific indicator codes used, e.g., SP.DYN.LE00.IN]
+```
+
+### MIDUS 2
+
+```
+Ryff, C., Almeida, D. M., Ayanian, J., Carr, D. S., Cleary, P. D., 
+Coe, C., ... & Williams, D. (2007). Midlife in the United States 
+(MIDUS 2), 2004-2006 (ICPSR 4652) [Dataset]. Inter-university 
+Consortium for Political and Social Research. 
+https://doi.org/10.3886/ICPSR04652.v1
+```
+
+**Ryff Scales citation**:
+```
+Ryff, C. D. (1989). Happiness is everything, or is it? Explorations 
+on the meaning of psychological well-being. Journal of Personality 
+and Social Psychology, 57(6), 1069–1081. 
+https://doi.org/10.1037/0022-3514.57.6.1069
+```
+
+---
+
+## Related Resources
+
+- [f-Factor](/concepts/f-factor) - What to do with the data once you have it
+- [PERMA Framework](/concepts/perma-framework) - Understanding the six dimensions
+- [Mathematical Models](/concepts/mathematical-models) - Formal models requiring these data
+
+## Scripts Reference
+
+**Download & harmonization**: `01_download_wellbeing_data.py` (415 lines)  
+**Country-level analysis**: `02_analyze_wellbeing_f.py` (733 lines)  
+**Full model suite**: `03_models_full_f.py` (1,300+ lines)  
+**Individual-level replication**: `04_individual_level_f_analysis.py` (933 lines)
+
+All scripts include:
+- Extensive docstring documentation
+- Inline comments explaining data quirks
+- Missingness reports
+- Descriptive statistics
+- Reproducible random seeds

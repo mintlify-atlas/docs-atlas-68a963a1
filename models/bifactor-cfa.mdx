@@ -1,0 +1,243 @@
+---
+title: "Bifactor CFA Model"
+description: "Maximum likelihood estimation of the bifactor confirmatory factor analysis model with general f and domain-specific factors"
+---
+
+## Overview
+
+The bifactor CFA (Confirmatory Factor Analysis) model is the first mathematical model for analyzing the f-factor. It represents wellbeing through a **general factor (f)** plus **domain-specific factors**, allowing us to quantify how much variance is explained by the general flourishing dimension versus specific aspects like hedonic, eudaimonic, or social-physical wellbeing.
+
+## Model Structure
+
+### Bifactor Specification
+
+Each observed wellbeing indicator is modeled as:
+
+```
+y_ij = μ_j + λ_j^f · f_i + λ_j^sk · s_ki + ε_ij
+```
+
+Where:
+- `y_ij` = observed score for individual i on indicator j
+- `f_i` = general flourishing factor for individual i
+- `s_ki` = specific factor k for individual i
+- `λ_j^f` = loading of indicator j on general factor f
+- `λ_j^sk` = loading of indicator j on specific factor k
+- `ε_ij` = unique variance (measurement error)
+
+### Model-Implied Covariance
+
+The bifactor model produces a covariance matrix:
+
+```
+Σ = Λ_f Λ_f' + Λ_s Λ_s' + Θ
+```
+
+Where:
+- `Λ_f Λ_f'` = contribution from the general factor
+- `Λ_s Λ_s'` = contribution from specific factors (block-diagonal)
+- `Θ` = diagonal matrix of unique variances
+
+## Domain Groups
+
+The model groups six PERMA+H indicators into three domain-specific factors:
+
+- **Hedonic**: Positive emotion (P), Meaning & life satisfaction (M)
+- **Eudaimonic**: Engagement & autonomy (E), Accomplishment (A)
+- **Social-Physical**: Relationships (R), Health (H)
+
+## Maximum Likelihood Estimation
+
+### Fitting Function
+
+The model parameters are estimated by minimizing the ML discrepancy function:
+
+```
+F_ML = log|Σ(θ)| + tr(S · Σ(θ)⁻¹) - log|S| - p
+```
+
+Where:
+- `Σ(θ)` = model-implied covariance matrix
+- `S` = observed sample covariance matrix
+- `p` = number of indicators
+
+<Note>
+The function uses log-parameterization for unique variances (θ = exp(params)) to ensure positivity during optimization.
+</Note>
+
+## Key Metrics
+
+### Omega Hierarchical (ω_h)
+
+Omega hierarchical quantifies the proportion of total variance attributable to the general factor:
+
+```
+ω_h = (Σ λ_j^f)² / [(Σ λ_j^f)² + Σ_k (Σ_{j∈k} λ_j^sk)² + Σ θ_j]
+```
+
+**Interpretation:**
+- **High ω_h (0.70-0.90)**: General factor dominates; wellbeing is primarily a single dimension
+- **Moderate ω_h (0.50-0.70)**: Both general and specific factors matter
+- **Low ω_h (< 0.50)**: Domain-specific factors are more important than general f
+
+Empirical research typically finds ω_h ≈ 0.71 – 0.86, indicating strong general factor dominance.
+
+### Explained Common Variance (ECV)
+
+```
+ECV = Σ(λ_j^f)² / [Σ(λ_j^f)² + Σ(λ_j^s)²]
+```
+
+ECV measures the proportion of **common** variance (excluding unique variance) explained by the general factor.
+
+### Fit Indices
+
+**Chi-Square Test:**
+```
+χ² = (N - 1) · F_ML
+```
+
+**RMSEA (Root Mean Square Error of Approximation):**
+```
+RMSEA = sqrt(max(0, (χ²/df - 1) / (N - 1)))
+```
+
+Good fit: RMSEA < 0.05  
+Acceptable fit: RMSEA < 0.08
+
+**Degrees of Freedom:**
+```
+df = p(p+1)/2 - 3p
+```
+where 3p accounts for general loadings (p), specific loadings (p), and unique variances (p).
+
+## Function API
+
+### fit_bifactor_cfa()
+
+```python
+def fit_bifactor_cfa(S, N, cols):
+    """
+    Fit bifactor CFA via ML and return loadings, unique variances, omega_h.
+    
+    Returns dict with:
+        lambda_f  — general factor loadings (p,)
+        lambda_s  — specific factor loadings (p,)
+        theta     — unique variances (p,)
+        omega_h   — omega hierarchical
+        Sigma_hat — model-implied covariance
+        F_min     — minimized discrepancy
+        chi2      — model chi-square
+        df        — degrees of freedom
+        RMSEA     — root mean square error of approximation
+    """
+```
+
+<ParamField path="S" type="ndarray (p, p)">
+  Sample covariance matrix of standardized indicators
+</ParamField>
+
+<ParamField path="N" type="int">
+  Sample size (number of observations)
+</ParamField>
+
+<ParamField path="cols" type="list">
+  List of indicator column names (length p)
+</ParamField>
+
+### Returns Dictionary
+
+<ResponseField name="lambda_f" type="ndarray (p,)">
+  General factor loadings for each indicator
+</ResponseField>
+
+<ResponseField name="lambda_s" type="ndarray (p,)">
+  Specific factor loadings for each indicator
+</ResponseField>
+
+<ResponseField name="theta" type="ndarray (p,)">
+  Unique variances (measurement error) for each indicator
+</ResponseField>
+
+<ResponseField name="omega_h" type="float">
+  Omega hierarchical reliability coefficient
+</ResponseField>
+
+<ResponseField name="ecv" type="float">
+  Explained common variance (proportion of common variance from general factor)
+</ResponseField>
+
+<ResponseField name="RMSEA" type="float">
+  Root mean square error of approximation fit index
+</ResponseField>
+
+<ResponseField name="converged" type="bool">
+  Whether the optimization converged successfully
+</ResponseField>
+
+## Interpreting Results
+
+### General Factor Loadings (λ^f)
+
+All positive loadings indicate the **positive manifold** — all wellbeing domains increase together. Typical values range from 0.4 to 0.8.
+
+### Comparing λ^f vs λ^s
+
+When general loadings substantially exceed specific loadings, the general factor dominates:
+- If λ^f > 2·λ^s for most indicators → strong unidimensionality
+- If λ^f ≈ λ^s → both general and specific factors matter
+
+### Threshold Guidelines
+
+**Strong general factor evidence:**
+- ω_h > 0.75
+- ECV > 0.70
+- RMSEA < 0.05
+- All λ^f > 0.50
+
+**Weak general factor:**
+- ω_h < 0.50
+- ECV < 0.50
+- Large specific loadings dominate
+
+## Implementation Details
+
+### Initialization
+
+The algorithm initializes parameters from PCA:
+```python
+pca = PCA(n_components=1)
+lam_f_init = pca.components_[0] * sqrt(explained_variance)
+```
+
+### Optimization
+
+Uses L-BFGS-B with:
+- Maximum iterations: 5000
+- Function tolerance: 1e-10
+- Positive constraints via log-parameterization of θ
+
+### Sign Identification
+
+Since factor direction is arbitrary, all general loadings are oriented positively (flourishing direction):
+```python
+if lam_f.mean() < 0:
+    lam_f = -lam_f
+```
+
+## Related Models
+
+The bifactor CFA model complements other f-factor models:
+
+- [Mutualism Dynamics](/models/mutualism-dynamics) — Shows how positive manifold emerges without latent variables
+- [Lyapunov Stability](/models/lyapunov-stability) — Analyzes resilience and equilibrium stability
+- [Capabilities-Adjusted](/models/capabilities-adjusted) — Incorporates threshold violations
+
+## References
+
+**Source code:** `03_models_full_f.py` lines 111-342
+
+**Key functions:**
+- `fit_bifactor_cfa()` — Main estimation function (lines 189-288)
+- `_build_sigma_bifactor()` — Construct model-implied covariance (lines 133-165)
+- `_ml_discrepancy()` — ML fitting function (lines 168-186)

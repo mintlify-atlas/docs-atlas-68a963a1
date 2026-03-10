@@ -1,0 +1,686 @@
+---
+title: 'Plotting & Visualization'
+description: 'Visualization functions for correlation matrices, scree plots, factor loadings, country scores, and dynamical models'
+---
+
+## Overview
+
+The plotting module provides comprehensive visualization for f-factor analysis, including correlation heatmaps, PCA diagnostics, country rankings, mutualism dynamics, and resilience analysis.
+
+---
+
+## Configuration
+
+### Matplotlib Style
+
+All scripts use consistent styling:
+
+```python
+import matplotlib.pyplot as plt
+import matplotlib
+
+plt.style.use("seaborn-v0_8-whitegrid")
+matplotlib.rcParams.update({
+    "font.family": "DejaVu Sans",
+    "axes.titlesize": 13,
+    "axes.labelsize": 11,
+    "xtick.labelsize": 9,
+    "ytick.labelsize": 9,
+    "figure.dpi": 120,
+    "savefig.dpi": 150,
+    "savefig.bbox": "tight",
+})
+```
+
+**File Locations:**
+- Script 02: `02_analyze_wellbeing_f.py:105`
+- Script 03: `03_models_full_f.py:98`
+- Script 04: `04_individual_level_f_analysis.py:177`
+
+---
+
+### Color Palette
+
+Domain-specific colors (PERMA+H):
+
+```python
+PALETTE = {
+    "P_positive_emotion": "#E8622A",
+    "E_engagement_autonomy": "#3B7DD8",
+    "R_relationships": "#2EAA6A",
+    "M_meaning_life_sat": "#9B59B6",
+    "A_accomplishment_gdp": "#E67E22",
+    "H_health": "#1ABC9C",
+}
+```
+
+**Ryff PWB (Individual-Level):**
+
+```python
+PALETTE = {
+    "B1SPWBA1": "#3B7DD8",  # Autonomy
+    "B1SPWBE1": "#E8622A",  # Environmental Mastery
+    "B1SPWBG1": "#2EAA6A",  # Personal Growth
+    "B1SPWBR1": "#9B59B6",  # Positive Relations
+    "B1SPWBU1": "#E67E22",  # Purpose in Life
+    "B1SPWBS1": "#1ABC9C",  # Self-Acceptance
+}
+```
+
+---
+
+## Correlation Visualizations
+
+### plot_correlation_matrix()
+
+```python
+def plot_correlation_matrix(df: pd.DataFrame, cols: list) -> plt.Figure
+```
+
+Heatmap of Pearson correlations among wellbeing dimensions (positive manifold visualization).
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with wellbeing dimensions
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  List of column names to correlate
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Matplotlib figure with correlation heatmap
+</ParamField>
+
+**Features:**
+- Seaborn heatmap with "RdYlGn" colormap (red-yellow-green)
+- Annotated cells (correlation values)
+- Color scale: -0.2 to 1.0
+- Reports mean off-diagonal correlation
+- Full matrix (not just lower triangle)
+
+**File Location:** `02_analyze_wellbeing_f.py:163`
+
+---
+
+### plot_coupling_proxy()
+
+```python
+def plot_coupling_proxy(df: pd.DataFrame, cols: list) -> plt.Figure
+```
+
+Partial correlation matrix heatmap (proxy for mutualistic coupling M_kl).
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with wellbeing dimensions
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  List of column names
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Heatmap of partial correlations
+</ParamField>
+
+**Interpretation:**
+- Positive partial r_ij → direct mutual facilitation between domains i and j
+- Partial correlations control for all other dimensions
+- Closer analogue to direct coupling than zero-order correlations
+
+**File Location:** `02_analyze_wellbeing_f.py:524`
+
+---
+
+## PCA Diagnostic Plots
+
+### plot_scree()
+
+```python
+def plot_scree(eigenvalues: np.ndarray, var_ratio: np.ndarray) -> plt.Figure
+```
+
+Two-panel scree plot: eigenvalues and cumulative variance explained.
+
+<ParamField path="eigenvalues" type="np.ndarray" required>
+  Array of PCA eigenvalues (variance per component)
+</ParamField>
+
+<ParamField path="var_ratio" type="np.ndarray" required>
+  Proportion of variance explained per component
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Figure with two subplots
+</ParamField>
+
+**Panel A: Scree Plot**
+- Line plot of eigenvalues
+- Kaiser criterion line (λ = 1)
+- First eigenvalue highlighted (shaded bar)
+- Annotation: PC1 variance %
+
+**Panel B: Cumulative Variance**
+- Step plot of cumulative variance
+- 80% threshold line
+- Percentage labels on each step
+
+**File Location:** `02_analyze_wellbeing_f.py:261`
+
+---
+
+### plot_factor_loadings()
+
+```python
+def plot_factor_loadings(
+    loadings: np.ndarray,
+    cols: list,
+    boot_loadings: np.ndarray,
+) -> plt.Figure
+```
+
+Horizontal bar chart of PC1 loadings with 95% bootstrap confidence intervals.
+
+<ParamField path="loadings" type="np.ndarray" required>
+  Full loadings matrix (n_features × n_components)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="boot_loadings" type="np.ndarray" required>
+  Bootstrap replicates (n_boot × n_features)
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Bar chart with error bars
+</ParamField>
+
+**Features:**
+- Bars sorted by loading magnitude (descending)
+- Domain-specific colors (PALETTE)
+- Error bars = 95% CI from bootstrap
+- Value labels on bars
+- Interpretation note: "Higher loading → dimension more closely tracks f"
+
+**File Location:** `02_analyze_wellbeing_f.py:317`
+
+---
+
+## Country Score Visualizations
+
+### plot_country_f_scores()
+
+```python
+def plot_country_f_scores(df: pd.DataFrame, n: int = 20) -> plt.Figure
+```
+
+Two-panel horizontal bar chart: top N and bottom N countries by f score.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with columns `country` and `f_z` (z-standardized f scores)
+</ParamField>
+
+<ParamField path="n" type="int" default="20">
+  Number of countries to show in each panel
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Two-panel bar chart
+</ParamField>
+
+**Features:**
+- Left panel: Top N (blue bars)
+- Right panel: Bottom N (red/orange bars)
+- Value labels on bars
+- Sorted by f score within each panel
+- Reference line at f = 0
+
+**File Location:** `02_analyze_wellbeing_f.py:413`
+
+---
+
+### plot_f_distribution()
+
+```python
+def plot_f_distribution(df: pd.DataFrame) -> plt.Figure
+```
+
+Histogram + KDE of f score distribution with normality test.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with `f_z` column (z-standardized f scores)
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Histogram with overlays
+</ParamField>
+
+**Features:**
+- Histogram (30 bins, normalized density)
+- KDE overlay (orange line)
+- N(0,1) reference distribution (dashed black)
+- Shapiro-Wilk normality test results
+- Vertical line at f = 0
+
+**File Location:** `02_analyze_wellbeing_f.py:571`
+
+---
+
+## Scatter and Pair Plots
+
+### plot_scatter_matrix()
+
+```python
+def plot_scatter_matrix(df: pd.DataFrame, cols: list) -> plt.Figure
+```
+
+Lower-triangle scatter matrix with regression lines and Pearson r annotations.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with wellbeing dimensions
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  List of column names (K dimensions)
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  K × K grid of subplots
+</ParamField>
+
+**Features:**
+- **Diagonal:** KDE plots (density of each dimension)
+- **Lower triangle:** Scatter plots with:
+  - OLS regression line
+  - Pearson r annotation
+  - Domain-specific colors
+- **Upper triangle:** Hidden (set invisible)
+
+**File Location:** `02_analyze_wellbeing_f.py:458`
+
+---
+
+## Mutualism Model Visualizations
+
+### plot_mutualism_demo()
+
+```python
+def plot_mutualism_demo(sys, equilibria, cols) -> plt.Figure
+```
+
+**From script 03:**
+
+Three-panel demonstration of the mutualism dynamical model.
+
+<ParamField path="sys" type="MutualismSystem" required>
+  Calibrated mutualism system object
+</ParamField>
+
+<ParamField path="equilibria" type="np.ndarray" required>
+  Simulated population equilibria (n_individuals × K)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names (K dimensions)
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Three-panel figure
+</ParamField>
+
+**Panel A: Trajectory Convergence**
+- Time-series plot: x_k(t) for all K domains
+- Dashed lines: carrying capacities C_k
+- Dotted lines: equilibrium values x*
+- Shows: x* > C (mutualism lifts equilibrium above baseline)
+
+**Panel B: Population Correlations**
+- Heatmap of correlations among simulated individuals
+- Demonstrates: positive manifold emerges without latent variable
+- Annotated cells with correlation values
+
+**Panel C: Eigenvalue Spectrum**
+- Bar chart: variance explained by each PC
+- First bar highlighted (red/orange)
+- Shows: dominant first eigenvalue despite no g-factor in generative model
+- Null expectation line (100/K %)
+
+**File Location:** `03_models_full_f.py:545`
+
+---
+
+## Lyapunov Stability Visualizations
+
+### plot_lyapunov_analysis()
+
+```python
+def plot_lyapunov_analysis(lyap_result, x_star, sys, cols) -> plt.Figure
+```
+
+**From script 03:**
+
+Three-panel Lyapunov stability and resilience analysis.
+
+<ParamField path="lyap_result" type="dict" required>
+  Output from lyapunov_analysis() function
+</ParamField>
+
+<ParamField path="x_star" type="np.ndarray" required>
+  Equilibrium state vector (K,)
+</ParamField>
+
+<ParamField path="sys" type="MutualismSystem" required>
+  Mutualism system object
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Three-panel figure
+</ParamField>
+
+**Panel A: Jacobian Eigenvalues**
+- Scatter plot in complex plane (Re(λ) vs Im(λ))
+- Stability boundary: Re(λ) = 0 (vertical red line)
+- Dominant eigenvalue λ₁ annotated
+- Return time τ = 1/|Re(λ₁)|
+
+**Panel B: Perturbation Response**
+- Time-series: % deviation from equilibrium after shock
+- 30% negative shock to first domain
+- Shows recovery dynamics for all K domains
+- Demonstrates: stable system returns to equilibrium
+
+**Panel C: Basin of Attraction (2D Projection)**
+- Ellipsoid representing basin of attraction
+- Projected onto two principal eigenvectors of P^{-1}
+- Star marker at equilibrium x*
+- Ellipsoid size = resilience measure
+
+**File Location:** `03_models_full_f.py:745`
+
+---
+
+### plot_resilience_vs_f()
+
+```python
+def plot_resilience_vs_f(df_scored, resilience_df) -> plt.Figure
+```
+
+Three-panel scatter plots testing predicted relationships between f, resilience, and coupling.
+
+<ParamField path="df_scored" type="pd.DataFrame" required>
+  Dataframe with `f_z` column (country f scores)
+</ParamField>
+
+<ParamField path="resilience_df" type="pd.DataFrame" required>
+  Output from country_resilience_scores() with resilience metrics
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Three-panel scatter plot
+</ParamField>
+
+**Panel A: f vs Resilience**
+- Scatter: f_z (x-axis) vs resilience R(x*) (y-axis)
+- Pearson r and p-value annotated
+- Prediction: positive correlation (higher f → more resilient)
+
+**Panel B: f vs Return Time τ**
+- Scatter: f_z vs τ = 1/|Re(λ₁)|
+- Shorter τ → faster recovery from perturbation
+
+**Panel C: Mean Coupling M̄ vs f**
+- Scatter: mean coupling strength vs f score
+- Paper predicts: optimal coupling regime maximizes f
+
+**File Location:** `03_models_full_f.py:864`
+
+---
+
+## Capabilities Analysis Visualizations
+
+### plot_capabilities_analysis()
+
+```python
+def plot_capabilities_analysis(df_clean, cap_df, cap_summary, cols) -> plt.Figure
+```
+
+**From script 03:**
+
+Four-panel visualization of capability-adjusted flourishing (Model 4).
+
+<ParamField path="df_clean" type="pd.DataFrame" required>
+  Cleaned dataframe with country names
+</ParamField>
+
+<ParamField path="cap_df" type="pd.DataFrame" required>
+  Output from compute_capabilities_adjusted_f()
+</ParamField>
+
+<ParamField path="cap_summary" type="dict" required>
+  Summary statistics (thresholds, Alkire-Foster indices)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  2×2 grid of subplots
+</ParamField>
+
+**Panel A: f vs f_cap**
+- Scatter: standard f (x) vs capability-adjusted f_cap (y)
+- Color-coded: pass all thresholds (green) vs below threshold (red)
+- Diagonal y=x reference line
+- Shows: threshold violations create downward penalty
+
+**Panel B: Deprivation Rates by Dimension**
+- Horizontal bar chart: % countries below threshold per dimension
+- Domain-specific colors
+- Threshold = 25th percentile per dimension
+
+**Panel C: Alkire-Foster Decomposition**
+- Horizontal bar chart: each dimension's contribution to M₀
+- M₀ = adjusted headcount ratio (H × A)
+- Shows: which dimensions contribute most to multidimensional deprivation
+
+**Panel D: Distribution of Deprivation Breadth**
+- Bar chart: number of dimensions below threshold per country
+- Zero-deprived bar highlighted green
+- Non-compensatory logic: any single deprivation matters
+
+**File Location:** `03_models_full_f.py:1024`
+
+---
+
+## Coupling Sweep Visualizations
+
+### plot_coupling_sweep()
+
+```python
+def plot_coupling_sweep(sweep_df) -> plt.Figure
+```
+
+Three-panel visualization of coupling strength sweep (optimal regime prediction).
+
+<ParamField path="sweep_df" type="pd.DataFrame" required>
+  Output from coupling_sweep() with columns: m_bar, pct_var_pc1, mean_eq, resilience
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Three-panel line plot
+</ParamField>
+
+**Panel A: Coupling → f Dominance**
+- Line plot: M̄ (x) vs PC1 variance explained (y)
+- Shows: stronger coupling → stronger positive manifold
+- Null expectation line (equal eigenvalues)
+
+**Panel B: Coupling → Wellbeing Level**
+- Line plot: M̄ (x) vs mean equilibrium level (y)
+- Shows: mutualism lifts all domains above carrying capacity
+
+**Panel C: Coupling → Resilience**
+- Line plot: M̄ (x) vs resilience R(x*) (y)
+- Vertical line at peak resilience (optimal M̄)
+- Paper prediction: ∃ optimal M̄ maximizing f, wellbeing, and resilience jointly
+
+**File Location:** `03_models_full_f.py:1172`
+
+---
+
+## Bifactor Model Visualizations
+
+### plot_bifactor_loadings()
+
+```python
+def plot_bifactor_loadings(result, cols) -> plt.Figure
+```
+
+Paired horizontal bar chart: general (f) loadings vs specific (s_k) loadings.
+
+<ParamField path="result" type="dict" required>
+  Output from fit_bifactor_cfa()
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Bar chart with paired bars per dimension
+</ParamField>
+
+**Features:**
+- Two bars per dimension:
+  - General factor loading (blue)
+  - Specific factor loading (orange)
+- Domain groups shaded in background
+- Value labels on bars
+- ω_h, ECV, RMSEA reported in title
+
+**File Location:** `03_models_full_f.py:291`
+
+---
+
+## Individual-Level Specific Plots
+
+### plot_demographic_f()
+
+```python
+def plot_demographic_f(df: pd.DataFrame) -> plt.Figure
+```
+
+**From script 04:**
+
+Three-panel violin plot: f score distribution by age, sex, and education.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with `f_score` and demographic columns (B1PAGE_M2, B1PRSEX, B1PF7A)
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Three violin plots
+</ParamField>
+
+**Features:**
+- Violin = kernel density estimate (width = density)
+- Internal bars = quartiles
+- Reference line at f = 0
+- Sex panel: Cohen's d effect size annotated
+
+**File Location:** `04_individual_level_f_analysis.py:625`
+
+---
+
+### plot_f_vs_p()
+
+```python
+def plot_f_vs_p(df: pd.DataFrame) -> plt.Figure | None
+```
+
+Hexbin scatter plot: f (flourishing) vs p (psychopathology proxy = negative affect).
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with `f_score` and `B1SNEGAF` (negative affect)
+</ParamField>
+
+<ParamField path="return" type="plt.Figure | None">
+  Hexbin plot with marginal histograms
+</ParamField>
+
+**Features:**
+- Hexbin density plot (YlOrRd colormap)
+- OLS regression line
+- Marginal histograms (top and right axes)
+- Annotation box:
+  - Pearson r and p-value
+  - Shared variance (r²) and independent variance (1 - r²)
+  - Dual continua interpretation
+
+**Interpretation:**
+- Moderate negative correlation expected (r ≈ -0.4 to -0.5)
+- Scatter around line → f and p are distinct dimensions
+- Tests dual continua model: wellbeing ≠ absence of illness
+
+**File Location:** `04_individual_level_f_analysis.py:708`
+
+---
+
+## Comparison Plots
+
+### compare_ecological_individual()
+
+```python
+def compare_ecological_individual(
+    country_vr: float,
+    individual_vr: float,
+) -> plt.Figure
+```
+
+Bar chart comparing PC1 variance explained at country vs. individual level.
+
+<ParamField path="country_vr" type="float" required>
+  PC1 variance ratio from country-level analysis (script 02)
+</ParamField>
+
+<ParamField path="individual_vr" type="float" required>
+  PC1 variance ratio from individual-level analysis (script 04)
+</ParamField>
+
+<ParamField path="return" type="plt.Figure">
+  Two-bar comparison chart
+</ParamField>
+
+**Features:**
+- Bar 1: Country-level (orange)
+- Bar 2: Individual-level (blue)
+- Difference annotated (ecological inflation)
+- Interpretation: aggregation removes within-group variance → inflates correlations
+
+**File Location:** `04_individual_level_f_analysis.py:766`
+
+---
+
+## Saving Figures
+
+All plotting functions return `plt.Figure` objects. Save with:
+
+```python
+fig = plot_correlation_matrix(df, cols)
+fig.savefig("output_dir/figure_name.png")
+```
+
+**Recommended Settings:**
+- DPI: 150 (already configured in rcParams)
+- Format: PNG or PDF
+- Bbox: "tight" (auto-configured)
+
+**Output Directories:**
+- Country-level: `wellbeing_figures/`
+- Individual-level: `wellbeing_figures_individual/`

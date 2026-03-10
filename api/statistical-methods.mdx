@@ -1,0 +1,462 @@
+---
+title: 'Statistical Methods'
+description: 'PCA, bifactor CFA, bootstrap inference, and correlation analysis for f-factor extraction'
+---
+
+## Overview
+
+Statistical methods module provides functions for extracting the general factor of flourishing (f) from wellbeing data, including exploratory (PCA) and confirmatory (bifactor CFA) approaches.
+
+---
+
+## Principal Component Analysis (PCA)
+
+### run_pca()
+
+```python
+def run_pca(X: np.ndarray, cols: list) -> tuple
+```
+
+Runs PCA on standardized wellbeing data and extracts f as the first principal component (PC1).
+
+<ParamField path="X" type="np.ndarray" required>
+  Standardized data matrix (N × K), where K = number of wellbeing dimensions
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  List of column names corresponding to X dimensions
+</ParamField>
+
+<ParamField path="return" type="tuple">
+  Returns `(pca, scores, loadings, eigenvalues, var_ratio)` where:
+  - `pca`: Fitted sklearn PCA object
+  - `scores`: PC scores (N × K), first column = f scores
+  - `loadings`: Factor loadings matrix (K × K)
+  - `eigenvalues`: Array of eigenvalues (variance explained by each PC)
+  - `var_ratio`: Proportion of variance explained by each PC
+</ParamField>
+
+**Sign Convention:**
+
+PCA eigenvectors have arbitrary sign. This function fixes the sign so that:
+- Higher PC1 score always means MORE flourishing
+- Anchor dimension: `M_meaning_life_sat` (life satisfaction)
+- If anchor loading is negative, flip entire PC1 (both loadings and scores)
+
+**Interpretation:**
+- PC1 serves as the empirical proxy for the general factor f
+- Loadings on PC1 indicate each dimension's contribution to f
+- Variance ratio[0] ≈ omega_h (proportion of variance due to general factor)
+
+**File Location:** `02_analyze_wellbeing_f.py:212`
+
+---
+
+### bootstrap_loadings()
+
+```python
+def bootstrap_loadings(X: np.ndarray, n_boot: int = 1000) -> np.ndarray
+```
+
+Bootstraps PC1 loadings to estimate 95% confidence intervals.
+
+<ParamField path="X" type="np.ndarray" required>
+  Standardized data matrix (N × K)
+</ParamField>
+
+<ParamField path="n_boot" type="int" default="1000">
+  Number of bootstrap resamples
+</ParamField>
+
+<ParamField path="return" type="np.ndarray">
+  Bootstrap loading matrix (n_boot × K) — each row is one bootstrap replicate
+</ParamField>
+
+**Bootstrap Procedure:**
+1. Resample rows of X with replacement (N samples)
+2. Run PCA on resampled data
+3. Extract PC1 loadings
+4. Align sign with reference loadings (from original sample)
+5. Repeat n_boot times
+
+**Usage:**
+
+```python
+boot_L = bootstrap_loadings(X_scaled, n_boot=1000)
+ci_lo = np.percentile(boot_L, 2.5, axis=0)
+ci_hi = np.percentile(boot_L, 97.5, axis=0)
+```
+
+**File Location:** `02_analyze_wellbeing_f.py:239`
+
+---
+
+## Correlation Analysis
+
+### Correlation Matrix Computation
+
+Pearson correlations among wellbeing dimensions ("positive manifold" test):
+
+```python
+corr = df[PERMA_COLS].corr()
+```
+
+**Positive Manifold Criterion:**
+
+All off-diagonal correlations should be positive:
+
+```python
+off_diag = corr.values[np.tril_indices_from(corr.values, k=-1)]
+n_positive = (off_diag > 0).sum()
+print(f"Positive: {n_positive} / {len(off_diag)}")
+```
+
+**Usage in Scripts:**
+- Script 02 (country-level): `02_analyze_wellbeing_f.py:163`
+- Script 04 (individual-level): `04_individual_level_f_analysis.py:367`
+
+---
+
+### Partial Correlations
+
+Partial correlations serve as a proxy for direct mutualistic coupling (after controlling for all other dimensions):
+
+```python
+from numpy.linalg import inv
+
+# Precision matrix = inverse of correlation matrix
+C = np.corrcoef(X.T)
+P = inv(C)
+
+# Partial correlations: r_ij|rest = -P_ij / sqrt(P_ii * P_jj)
+D = np.sqrt(np.diag(P))
+partial_corr = -P / np.outer(D, D)
+np.fill_diagonal(partial_corr, 1.0)
+```
+
+**Interpretation:**
+- Positive partial r_ij → direct facilitation between dimensions i and j
+- Used to calibrate mutualistic coupling matrix M in dynamical model
+
+**File Location:** `02_analyze_wellbeing_f.py:536` (in `plot_coupling_proxy`)
+
+---
+
+## Bifactor Confirmatory Factor Analysis
+
+### fit_bifactor_cfa()
+
+```python
+def fit_bifactor_cfa(S, N, cols) -> dict
+```
+
+**From script 03:**
+
+Fits a bifactor CFA model via maximum likelihood and computes omega hierarchical (ω_h).
+
+<ParamField path="S" type="np.ndarray" required>
+  Sample covariance matrix (K × K) of standardized data
+</ParamField>
+
+<ParamField path="N" type="int" required>
+  Sample size (number of observations)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names (K dimensions)
+</ParamField>
+
+<ParamField path="return" type="dict">
+  Dictionary containing:
+  - `lambda_f`: General factor loadings (K,)
+  - `lambda_s`: Specific factor loadings (K,)
+  - `theta`: Unique variances (K,)
+  - `omega_h`: Omega hierarchical (proportion of variance due to f)
+  - `ecv`: Explained common variance (f vs specific factors)
+  - `Sigma_hat`: Model-implied covariance matrix
+  - `chi2`, `df`, `RMSEA`: Fit indices
+</ParamField>
+
+**Bifactor Model Specification:**
+
+$$
+y_{ij} = \mu_j + \lambda_j^f \cdot f_i + \lambda_j^{s_k} \cdot s_{ki} + \varepsilon_{ij}
+$$
+
+Where:
+- f = general factor (loads on all indicators)
+- s_k = specific factors (one per domain group)
+- All factors orthogonal (uncorrelated)
+
+**Domain Groups (from paper):**
+1. **Hedonic**: Positive emotion (P), Meaning (M)
+2. **Eudaimonic**: Engagement (E), Accomplishment (A)
+3. **Social-Physical**: Relationships (R), Health (H)
+
+**Omega Hierarchical Formula:**
+
+$$
+\omega_h = \frac{(\sum \lambda_j^f)^2}{(\sum \lambda_j^f)^2 + \sum_k (\sum_{j \in k} \lambda_j^{s_k})^2 + \sum \theta_j}
+$$
+
+**Interpretation:**
+- ω_h = proportion of total variance due to general factor
+- Paper's empirical range: 0.71–0.86
+- High ω_h (>0.70) indicates strong general factor
+
+**File Location:** `03_models_full_f.py:189`
+
+---
+
+### ML Discrepancy Function
+
+```python
+def _ml_discrepancy(params, S, N, p, group_indices) -> float
+```
+
+Maximum likelihood fitting function for CFA:
+
+$$
+F_{ML} = \log|\Sigma(\theta)| + \text{tr}(S \cdot \Sigma(\theta)^{-1}) - \log|S| - p
+$$
+
+Minimizing F_ML over parameters θ gives ML estimates.
+
+**File Location:** `03_models_full_f.py:168`
+
+---
+
+### run_bifactor_cfa() (Individual-Level)
+
+```python
+def run_bifactor_cfa(df: pd.DataFrame, cols: list) -> dict | None
+```
+
+**From script 04 (uses semopy):**
+
+Runs bifactor CFA on individual-level MIDUS data using the semopy package.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with Ryff PWB subscale scores
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  List of 6 Ryff column names
+</ParamField>
+
+<ParamField path="return" type="dict | None">
+  Dictionary with omega_h, omega_t, ECV, and fit indices (CFI, RMSEA, SRMR)
+</ParamField>
+
+**Model Specification (semopy syntax):**
+
+```python
+model_spec = (
+    "f =~ B1SPWBA1 + B1SPWBE1 + B1SPWBG1 + B1SPWBR1 + B1SPWBU1 + B1SPWBS1\n"
+    "S1 =~ B1SPWBS1 + B1SPWBE1\n"  # Hedonic
+    "S2 =~ B1SPWBU1 + B1SPWBG1\n"  # Eudaimonic
+    "S3 =~ B1SPWBR1 + B1SPWBA1\n"  # Social/Autonomous
+)
+```
+
+**Fit Indices:**
+- CFI ≥ 0.95 (acceptable fit)
+- RMSEA ≤ 0.08 (acceptable)
+- SRMR ≤ 0.08 (acceptable)
+
+**File Location:** `04_individual_level_f_analysis.py:541`
+
+---
+
+## Correlation Reporting
+
+### report_manifold()
+
+```python
+def report_manifold(df: pd.DataFrame, cols: list, label: str = "") -> pd.DataFrame
+```
+
+Prints summary statistics for the correlation matrix (positive manifold test).
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Dataframe with wellbeing subscales
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  List of column names to correlate
+</ParamField>
+
+<ParamField path="label" type="str" default="">
+  Label for printout (e.g., "MIDUS 2", "WHR")
+</ParamField>
+
+<ParamField path="return" type="pd.DataFrame">
+  Correlation matrix
+</ParamField>
+
+**Output:**
+- Mean, min, max of off-diagonal correlations
+- Strongest and weakest correlation pairs
+- Positive manifold status (% > 0)
+
+**File Location:** `04_individual_level_f_analysis.py:367`
+
+---
+
+## Statistical Tests
+
+### Shapiro-Wilk Normality Test
+
+Tests whether f scores are normally distributed:
+
+```python
+from scipy import stats
+
+stat, p = stats.shapiro(f_scores)
+print(f"Shapiro-Wilk: W={stat:.3f}, p={p:.3f}")
+```
+
+**Interpretation:**
+- p < 0.05 → reject normality (distribution significantly non-normal)
+- Common for f scores: slight negative skew due to ceiling effects
+
+**Usage:**
+- Script 02: `02_analyze_wellbeing_f.py:591`
+- Script 04: `04_individual_level_f_analysis.py:859`
+
+---
+
+### Independent Samples t-test
+
+Compares f scores between demographic groups (e.g., males vs. females):
+
+```python
+male_f = df[df["sex"] == 1]["f_score"]
+female_f = df[df["sex"] == 2]["f_score"]
+
+t, p = stats.ttest_ind(male_f, female_f)
+cohen_d = (female_f.mean() - male_f.mean()) / np.sqrt(
+    (female_f.std()**2 + male_f.std()**2) / 2
+)
+```
+
+**Effect Size (Cohen's d):**
+- Small: d ≈ 0.2
+- Medium: d ≈ 0.5
+- Large: d ≈ 0.8
+
+**File Location:** `04_individual_level_f_analysis.py:668`
+
+---
+
+### Linear Regression
+
+Fits ordinary least squares regression line for scatter plots:
+
+```python
+from scipy import stats
+
+slope, intercept, r, p, stderr = stats.linregress(x, y)
+```
+
+**Usage:** All scatter plots in scripts 02, 03, 04
+
+---
+
+## PCA Interpretation
+
+### Explained Variance
+
+**Kaiser Criterion:**
+
+Retain components with eigenvalue > 1 (variance greater than a single variable).
+
+```python
+retain = eigenvalues > 1.0
+n_retain = retain.sum()
+```
+
+**Cumulative Variance:**
+
+Proportion of total variance explained by first k components:
+
+```python
+cumvar = np.cumsum(var_ratio) * 100
+```
+
+**Benchmark (from paper):**
+- PC1 variance: 60–75% (strong general factor)
+- PC2-PC6: Much smaller (domain-specific variation)
+
+---
+
+### Factor Loadings
+
+Loadings = correlations between original variables and PCs:
+
+```python
+loadings = pca.components_.T  # shape (n_features, n_components)
+```
+
+**Interpretation:**
+- Loading ≈ 0.7–0.9 → strong contribution to f
+- Loading < 0.3 → weak link to general factor
+- All loadings should be positive (after sign correction)
+
+**File Location:** `02_analyze_wellbeing_f.py:215`
+
+---
+
+## Model Comparison
+
+### Explained Common Variance (ECV)
+
+Proportion of common variance (non-unique) due to general factor:
+
+$$
+\text{ECV} = \frac{\sum (\lambda_j^f)^2}{\sum (\lambda_j^f)^2 + \sum (\lambda_j^s)^2}
+$$
+
+**Interpretation:**
+- ECV > 0.80 → general factor dominates, domain-specific factors minimal
+- Paper reports ECV ≈ 0.82 for MHC-SF wellbeing scale
+
+**File Location:** `03_models_full_f.py:258`
+
+---
+
+### Omega Hierarchical vs. PC1 Variance
+
+**Relationship:**
+
+- PCA PC1 variance ratio ≈ ω_h (both measure general factor dominance)
+- PCA is exploratory; bifactor CFA is confirmatory
+- PCA loadings unrotated; CFA allows domain-specific factors
+
+**Benchmark:**
+- Country-level: PC1 ≈ 70–75%, ω_h ≈ 0.75
+- Individual-level: PC1 ≈ 50–60%, ω_h ≈ 0.71–0.86 (depends on sample)
+
+---
+
+## Descriptive Statistics
+
+### descriptive_stats()
+
+```python
+def descriptive_stats(df: pd.DataFrame, cols: list)
+```
+
+Prints full descriptive statistics table (count, mean, std, min, quartiles, max, skewness, kurtosis).
+
+**File Location:** `02_analyze_wellbeing_f.py:148`
+
+---
+
+## Key Statistical Assumptions
+
+1. **Linearity:** Relationships between dimensions approximately linear
+2. **Multivariate normality:** Not strictly required for PCA, but helpful for inference
+3. **Complete data:** Listwise deletion used (see Data Loading module)
+4. **Standardization:** All variables z-scored before analysis
+5. **Sample size:** N ≥ 100 for stable PCA; N ≥ 200 preferred for CFA

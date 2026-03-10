@@ -1,0 +1,391 @@
+---
+title: 'models_full_f'
+description: 'Full mathematical implementation of the four f-factor models'
+---
+
+# Full f-Factor Models
+
+Complete implementation of the four models specified in "Toward f: A General Factor of Human Flourishing."
+
+## Models Overview
+
+1. **Bifactor CFA** — General factor f + domain-specific factors; omega_h computation
+2. **Mutualism** — Coupled logistic growth ODEs; demonstrates positive manifold without latent variable
+3. **Lyapunov Stability** — Resilience analysis, basin-of-attraction, return time
+4. **Capabilities-adjusted f** — Nussbaum thresholds, Alkire-Foster deprivation
+
+## Configuration
+
+```python
+DATA_PATH = Path("wellbeing_data/wellbeing_merged.csv")
+OUTPUT_DIR = Path("wellbeing_figures")
+
+BIFACTOR_GROUPS = {
+    "hedonic":         ["P_positive_emotion", "M_meaning_life_sat"],
+    "eudaimonic":      ["E_engagement_autonomy", "A_accomplishment_gdp"],
+    "social_physical": ["R_relationships", "H_health"],
+}
+```
+
+## Model 1: Bifactor CFA
+
+### fit_bifactor_cfa()
+
+Fits bifactor CFA via maximum likelihood.
+
+<ParamField path="S" type="np.ndarray" required>
+  Sample covariance matrix (6 × 6)
+</ParamField>
+
+<ParamField path="N" type="int" required>
+  Sample size
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  PERMA+H column names
+</ParamField>
+
+**Returns:** `dict`
+
+Dictionary containing:
+- `lambda_f` — General factor loadings (p,)
+- `lambda_s` — Specific factor loadings (p,)
+- `theta` — Unique variances (p,)
+- `omega_h` — Omega hierarchical
+- `ecv` — Explained common variance
+- `Sigma_hat` — Model-implied covariance
+- `F_min` — Minimized ML discrepancy
+- `chi2` — Model chi-square
+- `df` — Degrees of freedom
+- `RMSEA` — Root mean square error of approximation
+- `converged` — Boolean convergence flag
+
+**Bifactor Specification:**
+
+```
+y_ij = μ_j + λ_j^f · f_i + λ_j^sk · s_ki + ε_ij
+```
+
+**Omega Hierarchical Formula:**
+
+```
+ω_h = (Σ λ_j^f)² / [(Σ λ_j^f)² + Σ_k (Σ_{j∈k} λ_j^sk)² + Σ θ_j]
+```
+
+**Example:**
+```python
+result = fit_bifactor_cfa(S, N, cols)
+print(f"omega_h = {result['omega_h']:.3f}")
+print(f"RMSEA = {result['RMSEA']:.3f}")
+```
+
+---
+
+### plot_bifactor_loadings()
+
+Creates paired bar chart of general vs specific factor loadings.
+
+<ParamField path="result" type="dict" required>
+  Result dictionary from fit_bifactor_cfa()
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+**Returns:** `plt.Figure`
+
+## Model 2: Mutualism Dynamical System
+
+### MutualismSystem
+
+Coupled logistic growth model (van der Maas et al. 2006, adapted).
+
+**ODE System:**
+
+```
+dx_k/dt = a_k · x_k · (1 - x_k/C_k + Σ_{l≠k} M_kl · x_l / C_k) + σ_k · ξ_k(t)
+```
+
+**Parameters:**
+
+<ParamField path="K" type="int" required>
+  Number of wellbeing domains
+</ParamField>
+
+<ParamField path="a" type="np.ndarray" default={"np.ones(K) * 0.5"}>
+  Intrinsic growth rates (K,)
+</ParamField>
+
+<ParamField path="C" type="np.ndarray" default={"np.ones(K)"}>
+  Carrying capacities (K,)
+</ParamField>
+
+<ParamField path="M" type="np.ndarray" default={"np.ones((K,K)) * 0.1"}>
+  Mutualistic coupling matrix (K × K), M_kk = 0
+</ParamField>
+
+<ParamField path="sigma" type="np.ndarray" default={"np.ones(K) * 0.05"}>
+  Noise amplitudes (K,) for stochastic simulation
+</ParamField>
+
+**Methods:**
+
+#### find_equilibrium()
+
+Finds equilibrium analytically and generates trajectory.
+
+<ParamField path="x0" type="np.ndarray" optional>
+  Initial state (defaults to C * 0.3)
+</ParamField>
+
+<ParamField path="t_span" type="tuple" default={(0, 200)}>
+  Time span for trajectory
+</ParamField>
+
+**Returns:** `tuple[np.ndarray, OdeSolution]`
+
+- `x_star` — Equilibrium vector
+- `sol` — ODE solution for plotting
+
+#### jacobian_at_equilibrium()
+
+Computes Jacobian matrix J at equilibrium.
+
+<ParamField path="x_star" type="np.ndarray" required>
+  Equilibrium state
+</ParamField>
+
+**Returns:** `np.ndarray`
+
+Jacobian matrix (K × K):
+
+```
+J_kl = ∂ẋ_k / ∂x_l  evaluated at x*
+```
+
+#### simulate_population()
+
+Simulates population with parameter variation.
+
+<ParamField path="n_individuals" type="int" default={200}>
+  Number of individuals to simulate
+</ParamField>
+
+<ParamField path="C_var" type="float" default={0.15}>
+  Coefficient of variation for carrying capacity
+</ParamField>
+
+<ParamField path="M_var" type="float" default={0.05}>
+  Coefficient of variation for coupling
+</ParamField>
+
+<ParamField path="a_var" type="float" default={0.05}>
+  Coefficient of variation for growth rates
+</ParamField>
+
+**Returns:** `np.ndarray`
+
+Equilibrium vectors for population (n_individuals × K).
+
+**Key demonstration:** Individual differences in parameters produce a covariance matrix with positive manifold **without** a latent variable.
+
+**Example:**
+```python
+sys = MutualismSystem(K=6, a=np.ones(6)*0.5)
+equilibria = sys.simulate_population(n_individuals=200)
+cov = np.corrcoef(equilibria.T)
+print("All correlations positive:", (cov > 0).all())
+```
+
+---
+
+### calibrate_mutualism_from_data()
+
+Calibrates mutualism parameters from observed data.
+
+<ParamField path="X_raw" type="np.ndarray" required>
+  Raw observed data (N × K)
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+**Returns:** `MutualismSystem`
+
+Calibrated system where:
+- **C_k** ← column means × 0.7 (carrying capacities)
+- **M_kl** ← scaled partial correlations (coupling)
+- **a_k** ← 0.5 (not identifiable from cross-sectional data)
+
+**Example:**
+```python
+sys = calibrate_mutualism_from_data(X_raw, cols)
+x_star, sol = sys.find_equilibrium()
+```
+
+## Model 3: Lyapunov Stability
+
+### lyapunov_analysis()
+
+Full Lyapunov stability analysis at equilibrium.
+
+<ParamField path="sys" type="MutualismSystem" required>
+  Mutualism system
+</ParamField>
+
+<ParamField path="x_star" type="np.ndarray" required>
+  Equilibrium state
+</ParamField>
+
+**Returns:** `dict`
+
+Dictionary containing:
+- `J` — Jacobian matrix at x*
+- `eigenvalues` — Eigenvalues of J (all should have Re < 0 for stability)
+- `lambda_1` — Dominant eigenvalue (closest to zero)
+- `tau` — Characteristic return time = 1/|Re(λ₁)|
+- `P` — Solution to Lyapunov equation J'P + PJ = -Q
+- `resilience` — Basin depth proxy: minimum perturbation size to exit basin of attraction
+- `stable` — Boolean, True if all eigenvalues have negative real part
+
+**Example:**
+```python
+lyap = lyapunov_analysis(sys, x_star)
+if lyap["stable"]:
+    print(f"Stable equilibrium, return time τ = {lyap['tau']:.2f}")
+    print(f"Resilience R(x*) = {lyap['resilience']:.4f}")
+```
+
+---
+
+### country_resilience_scores()
+
+Computes per-country resilience by treating each country's values as equilibrium.
+
+<ParamField path="X_raw" type="np.ndarray" required>
+  Observed country data (N × K)
+</ParamField>
+
+<ParamField path="base_sys" type="MutualismSystem" required>
+  Base mutualism system
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `lambda_1_real` — Real part of dominant eigenvalue
+- `tau` — Return time
+- `resilience` — Resilience score
+- `stable` — Stability flag
+- `mean_coupling` — Mean coupling strength
+
+**Back-solving logic:** From x* = (I - M̃)⁻¹ C, we get C = (I - M̃) x*
+
+## Model 4: Capabilities-Adjusted Flourishing
+
+### compute_capabilities_adjusted_f()
+
+Computes capability-adjusted flourishing measure.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Clean DataFrame with country names
+</ParamField>
+
+<ParamField path="X_raw" type="np.ndarray" required>
+  Raw PERMA+H data (N × K)
+</ParamField>
+
+<ParamField path="f_scores" type="np.ndarray" required>
+  Standard psychometric f-scores
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="threshold_quantile" type="float" default={0.25}>
+  Quantile for Nussbaum thresholds
+</ParamField>
+
+**Returns:** `tuple[pd.DataFrame, dict]`
+
+- Result DataFrame with f_cap and intermediate measures
+- Summary dictionary with thresholds, H, A, M₀, dimensional contributions
+
+**Formula:**
+
+```
+f_cap = f(x*) · 1[x*_k ≥ z_k ∀k] · h(Q_i)
+```
+
+Where:
+- **f(x*)** — Standard psychometric f (PC1 score)
+- **1[·]** — Nussbaum threshold indicator (non-compensatory)
+- **h(Q_i)** — Capability set size (approximated as 1 - CV)
+
+**Alkire-Foster Scoring:**
+
+```
+g_ij = 1 if x_ij < z_j  (deprived in dimension j)
+c_i = Σ w_j · g_ij     (deprivation score)
+ρ_k = 1 if c_i ≥ k     (identified as deprived)
+H = proportion identified
+A = average deprivation among deprived
+M₀ = H × A              (adjusted headcount ratio)
+```
+
+**Example:**
+```python
+cap_df, cap_summary = compute_capabilities_adjusted_f(
+    df_clean, X_raw, f_scores, cols, threshold_quantile=0.25
+)
+print(f"M₀ = {cap_summary['M0']:.3f}")
+print(f"Pass all thresholds: {(cap_df['nussbaum_pass']==1).sum()}")
+```
+
+## Integration: Coupling Strength Sweep
+
+### coupling_sweep()
+
+Sweeps coupling strength M̄ to find optimal regime.
+
+<ParamField path="base_sys" type="MutualismSystem" required>
+  Base system to scale
+</ParamField>
+
+<ParamField path="n_points" type="int" default={15}>
+  Number of M̄ values to test
+</ParamField>
+
+<ParamField path="n_individuals" type="int" default={80}>
+  Population size for simulation
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Results with columns:
+- `m_bar` — Mean coupling strength
+- `pct_var_pc1` — PC1 variance explained (f dominance)
+- `mean_eq` — Mean equilibrium level
+- `resilience` — Resilience score
+- `stable_frac` — Fraction of stable systems
+
+**Key prediction:** There exists an optimal coupling regime where f, wellbeing, and resilience are jointly maximized.
+
+**Regimes:**
+- **Too little coupling** → weak f, low equilibrium
+- **Optimal coupling** → strong f, high equilibrium, deep basin
+- **Too much coupling** → potential instability (cascade risk)
+
+**Example:**
+```python
+sweep_df = coupling_sweep(base_sys, n_points=20)
+opt_idx = sweep_df["resilience"].idxmax()
+print(f"Optimal M̄ = {sweep_df.loc[opt_idx, 'm_bar']:.3f}")
+```

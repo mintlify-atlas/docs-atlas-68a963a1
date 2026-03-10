@@ -1,0 +1,9 @@
+<svg width="800" height="200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="200" fill="#1a1a1a"/>
+  <text x="400" y="100" font-family="Arial, sans-serif" font-size="32" fill="#BB8FCE" text-anchor="middle" font-weight="bold">
+    Flourishing: f-Factor Analysis
+  </text>
+  <text x="400" y="140" font-family="Arial, sans-serif" font-size="16" fill="#aaa" text-anchor="middle">
+    Mathematical Models of Human Wellbeing
+  </text>
+</svg>

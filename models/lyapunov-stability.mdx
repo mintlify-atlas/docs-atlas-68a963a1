@@ -1,0 +1,457 @@
+---
+title: "Lyapunov Stability Analysis"
+description: "Mathematical analysis of equilibrium stability, resilience, and recovery dynamics using Jacobian eigenvalues and Lyapunov equations"
+---
+
+## Overview
+
+Lyapunov stability analysis (Model 3) provides a rigorous mathematical framework for understanding the **resilience** and **recovery dynamics** of wellbeing systems. By analyzing the linearized dynamics around equilibrium, we can predict:
+
+- Whether equilibrium is **stable** or **unstable**
+- How quickly the system **recovers** from perturbations
+- The **size of the basin of attraction** (how large a shock the system can withstand)
+- **Early warning signals** of approaching instability (critical slowing down)
+
+## Stability at Equilibrium
+
+### Linear Stability Analysis
+
+Near equilibrium x*, the dynamics are approximately linear:
+
+```
+dδx/dt ≈ J · δx
+```
+
+Where:
+- `δx = x - x*` is the deviation from equilibrium
+- `J` is the **Jacobian matrix** evaluated at x*
+
+### Jacobian Matrix
+
+For the mutualism system, the Jacobian is:
+
+**Diagonal elements (k = l):**
+```
+J_kk = a_k · (1 - 2x*_k/C_k + Σ_{l≠k} M_kl · x*_l / C_k)
+```
+
+**Off-diagonal elements (k ≠ l):**
+```
+J_kl = a_k · x*_k · M_kl / C_k
+```
+
+<Note>
+The Jacobian encodes both self-regulation (diagonal) and mutual support (off-diagonal).
+</Note>
+
+## Eigenvalue Interpretation
+
+### Stability Criterion
+
+An equilibrium is **asymptotically stable** if and only if:
+
+```
+Re(λ_i) < 0  for all eigenvalues λ_i of J
+```
+
+If any eigenvalue has positive real part, the equilibrium is **unstable**.
+
+### Dominant Eigenvalue
+
+The **dominant eigenvalue** λ₁ is the one with the largest (least negative) real part:
+
+```
+λ₁ = max{Re(λ_i)}
+```
+
+This eigenvalue controls the **slowest relaxation mode** and determines recovery time.
+
+### Physical Interpretation
+
+- **Large negative Re(λ₁) (e.g., -0.5)**: Fast recovery, strong stability
+- **Small negative Re(λ₁) (e.g., -0.05)**: Slow recovery, critical slowing down
+- **Re(λ₁) = 0**: Bifurcation point, loss of stability
+- **Positive Re(λ₁)**: Unstable, exponential divergence
+
+## Return Time (τ)
+
+### Definition
+
+The **characteristic return time** is:
+
+```
+τ = 1 / |Re(λ₁)|
+```
+
+This is the time scale for perturbations to decay by a factor of e ≈ 2.718.
+
+### Interpretation
+
+<ParamField path="τ < 5" type="fast recovery">
+  System rapidly returns to equilibrium after shocks. High resilience.
+</ParamField>
+
+<ParamField path="τ = 10-20" type="moderate recovery">
+  System takes moderate time to recover. Normal resilience.
+</ParamField>
+
+<ParamField path="τ > 50" type="slow recovery">
+  Critical slowing down. System near bifurcation point. Warning signal!
+</ParamField>
+
+<ParamField path="τ → ∞" type="bifurcation">
+  Dominant eigenvalue approaching zero. Imminent loss of stability.
+</ParamField>
+
+### Critical Slowing Down
+
+As a system approaches a bifurcation (tipping point):
+- λ₁ → 0
+- τ → ∞
+- Recovery slows dramatically
+- **Early warning signal** of regime shift
+
+This phenomenon is observed in ecological systems, financial markets, and potentially wellbeing dynamics.
+
+## Basin of Attraction
+
+### Lyapunov Equation
+
+To quantify the basin of attraction, solve the continuous-time Lyapunov equation:
+
+```
+J' P + P J = -Q
+```
+
+Where:
+- `J` = Jacobian at equilibrium
+- `Q` = positive-definite matrix (typically Q = I, identity)
+- `P` = solution matrix (positive-definite if system is stable)
+
+### Basin Ellipsoid
+
+The solution P defines an ellipsoidal basin:
+
+```
+B = {δx : δx' P δx ≤ c}
+```
+
+Perturbations within this ellipsoid return to equilibrium.
+
+### Resilience Metric
+
+The **resilience** is approximated as:
+
+```
+R(x*) = 1 / sqrt(λ_max(P))
+```
+
+Where λ_max(P) is the largest eigenvalue of P.
+
+**Interpretation:**
+- **High R**: Large basin, can withstand large perturbations
+- **Low R**: Small basin, fragile to shocks
+
+This is the **minimum perturbation size** (in the most vulnerable direction) that escapes the basin.
+
+## lyapunov_analysis() Function
+
+```python
+def lyapunov_analysis(sys, x_star):
+    """
+    Full Lyapunov stability analysis at equilibrium x*.
+    
+    Returns dict:
+        J           — Jacobian matrix at x*
+        eigenvalues — eigenvalues of J (sorted by real part)
+        lambda_1    — dominant eigenvalue (closest to zero)
+        tau         — characteristic return time = 1/|Re(λ₁)|
+        P           — solution to Lyapunov equation J'P + PJ = -Q
+        resilience  — basin depth proxy = 1/sqrt(λ_max(P))
+        stable      — bool, True if all eigenvalues have Re < 0
+    """
+```
+
+<ParamField path="sys" type="MutualismSystem">
+  Mutualism system instance with calibrated parameters
+</ParamField>
+
+<ParamField path="x_star" type="ndarray (K,)">
+  Equilibrium point to analyze
+</ParamField>
+
+### Returns Dictionary
+
+<ResponseField name="J" type="ndarray (K, K)">
+  Jacobian matrix at equilibrium
+</ResponseField>
+
+<ResponseField name="eigenvalues" type="ndarray (K,)">
+  Eigenvalues sorted by real part (descending)
+</ResponseField>
+
+<ResponseField name="lambda_1" type="complex">
+  Dominant eigenvalue (largest real part, controls recovery)
+</ResponseField>
+
+<ResponseField name="tau" type="float">
+  Characteristic return time = 1/|Re(λ₁)|
+</ResponseField>
+
+<ResponseField name="P" type="ndarray (K, K)">
+  Solution to Lyapunov equation (defines basin ellipsoid)
+</ResponseField>
+
+<ResponseField name="resilience" type="float">
+  Basin depth metric = 1/sqrt(λ_max(P))
+</ResponseField>
+
+<ResponseField name="stable" type="bool">
+  True if all eigenvalues have negative real part
+</ResponseField>
+
+## Perturbation-Response Analysis
+
+### Impulse Response
+
+To test recovery dynamics:
+
+1. Start at equilibrium x*
+2. Apply perturbation: x(0) = x* + δx
+3. Simulate forward: solve dx/dt = F(x)
+4. Measure deviation: ||x(t) - x*||
+
+Expected decay:
+```
+||x(t) - x*|| ≈ ||δx|| · exp(Re(λ₁) · t)
+```
+
+### Typical Perturbations
+
+- **Single domain shock**: δx = [0, 0, -0.3·x*_k, 0, 0, 0]
+- **Uniform shock**: δx = -0.2·x* (all domains down 20%)
+- **Random shock**: δx sampled from multivariate normal
+
+## Per-Country Resilience
+
+### country_resilience_scores()
+
+```python
+def country_resilience_scores(X_raw, base_sys, cols):
+    """
+    Compute per-country resilience by treating each country's 
+    observed values as its equilibrium.
+    
+    Returns DataFrame with resilience metrics per country.
+    """
+```
+
+**Approach:**
+
+1. For each country i, treat x_i as equilibrium
+2. Back-solve for country-specific carrying capacity: C_i = (I - M̃) x_i
+3. Compute Jacobian and eigenvalues for that country's system
+4. Extract τ and resilience
+
+<ParamField path="X_raw" type="ndarray (N, K)">
+  Observed data (N countries, K domains)
+</ParamField>
+
+<ParamField path="base_sys" type="MutualismSystem">
+  Base system providing coupling matrix M and growth rates a
+</ParamField>
+
+<ParamField path="cols" type="list">
+  Domain column names
+</ParamField>
+
+### Returns DataFrame
+
+<ResponseField name="lambda_1_real" type="float">
+  Real part of dominant eigenvalue
+</ResponseField>
+
+<ResponseField name="tau" type="float">
+  Characteristic return time
+</ResponseField>
+
+<ResponseField name="resilience" type="float">
+  Basin depth metric
+</ResponseField>
+
+<ResponseField name="stable" type="bool">
+  Whether equilibrium is stable
+</ResponseField>
+
+<ResponseField name="mean_coupling" type="float">
+  Average coupling strength for that country
+</ResponseField>
+
+## Predicted Relationships
+
+### 1. f vs Resilience
+
+**Prediction:** Positive correlation
+
+Countries with higher f-scores should have:
+- Higher equilibrium levels x*
+- Deeper basins of attraction
+- Higher resilience R(x*)
+
+**Mechanism:** Higher wellbeing → stronger positive feedback → more stable equilibria
+
+### 2. Coupling vs Stability
+
+**Prediction:** Inverted-U relationship
+
+- **Low coupling (M̄ < 0.1)**: Weak mutual support, low resilience
+- **Optimal coupling (M̄ ≈ 0.15-0.25)**: Strong f, deep basins, high resilience
+- **Excessive coupling (M̄ > 0.4)**: Risk of instability, positive feedbacks too strong
+
+### 3. Critical Slowing Down
+
+**Prediction:** τ increases before wellbeing collapse
+
+Early warning signal:
+```
+If dτ/dt > 0 and τ > 30 → approaching bifurcation
+```
+
+## Stable vs Unstable Equilibria
+
+### Stable Equilibrium
+
+**Characteristics:**
+- All Re(λ_i) < 0
+- Small perturbations decay exponentially
+- System returns to x* from nearby states
+- Basin of attraction has positive volume
+- **Resilient** to shocks
+
+**Example:**
+```
+Eigenvalues: [-0.25, -0.18, -0.12, -0.08, -0.06, -0.03]
+τ = 33.3 (moderate return time)
+Resilience = 0.15 (moderate basin)
+```
+
+### Unstable Equilibrium
+
+**Characteristics:**
+- At least one Re(λ_i) > 0
+- Perturbations grow exponentially
+- System moves away from x*
+- Basin of attraction has zero volume
+- **Not resilient** — cannot be observed
+
+**Example:**
+```
+Eigenvalues: [+0.05, -0.15, -0.12, -0.08, -0.06, -0.03]
+Unstable — cannot persist
+```
+
+<Warning>
+Unstable equilibria are **mathematical solutions** but not **observable states**. Real systems near unstable equilibria exhibit runaway dynamics.
+</Warning>
+
+## Visualization
+
+### Eigenvalue Plot
+
+Scatter plot in complex plane:
+- X-axis: Re(λ)
+- Y-axis: Im(λ)
+- Red vertical line at Re(λ) = 0 (stability boundary)
+
+**Stable:** All points left of red line  
+**Unstable:** Any point right of red line
+
+### Recovery Time Series
+
+After perturbation at t=0:
+- Plot % deviation from equilibrium
+- Should decay exponentially with time constant τ
+- Faster decay → higher resilience
+
+### Basin Ellipsoid (2D Projection)
+
+Project P onto two principal directions:
+- Ellipse boundary shows basin edge
+- Star at center = equilibrium
+- Larger ellipse → higher resilience
+
+## Mathematical Details
+
+### Exponential Stability
+
+For stable equilibrium with dominant eigenvalue λ₁:
+
+```
+||x(t) - x*|| ≤ M · ||x(0) - x*|| · exp(Re(λ₁) · t)
+```
+
+Where M is a constant depending on eigenvector geometry.
+
+### Lyapunov Function
+
+The solution P to the Lyapunov equation defines a Lyapunov function:
+
+```
+V(x) = (x - x*)' P (x - x*)
+```
+
+Properties:
+- V(x*) = 0
+- V(x) > 0 for x ≠ x*
+- dV/dt = -||x - x*||² < 0 (along trajectories)
+
+This proves x* is asymptotically stable.
+
+### Sensitivity to M
+
+The Jacobian (and hence eigenvalues) depend on coupling matrix M:
+
+```
+∂λ₁/∂M_kl ≈ eigenvector sensitivity
+```
+
+Increasing coupling generally:
+- Increases off-diagonal J elements (positive feedback)
+- Can destabilize if coupling too strong
+
+## Limitations
+
+### Linear Approximation
+
+Lyapunov analysis uses **local linearization**. Predictions hold for small perturbations only.
+
+For large shocks, nonlinear effects matter:
+- Actual recovery may be faster or slower than predicted
+- Basin boundary may be irregular (not ellipsoidal)
+
+### Cross-Sectional Data
+
+Calibrating from cross-sectional data assumes:
+- Countries are at equilibrium
+- Same coupling matrix M for all
+- Growth rates a not identifiable
+
+Longitudinal data would enable better parameter estimation.
+
+## Related Models
+
+- [Mutualism Dynamics](/models/mutualism-dynamics) — Generates the equilibria analyzed here
+- [Bifactor CFA](/models/bifactor-cfa) — Alternative latent variable approach
+- [Capabilities-Adjusted](/models/capabilities-adjusted) — Threshold-based wellbeing metric
+
+## References
+
+**Source code:** `03_models_full_f.py` lines 636-918
+
+**Key functions:**
+- `lyapunov_analysis()` (lines 640-691)
+- `country_resilience_scores()` (lines 694-742)
+- `jacobian_at_equilibrium()` (lines 406-430)
+
+**Mathematical background:**
+Lyapunov stability theory, eigenvalue analysis, basin of attraction estimation.

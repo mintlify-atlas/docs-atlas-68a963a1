@@ -1,0 +1,805 @@
+---
+title: Extending the Models
+description: How to customize dimensions, coupling matrices, bifactor groups, data sources, and contribute back
+---
+
+This guide shows how to adapt the analysis for custom wellbeing dimensions, alternative data sources, and different theoretical structures.
+
+## Adding New Wellbeing Dimensions
+
+### Step 1: Update Variable Mappings
+
+Edit the PERMA+H schema in `01_download_wellbeing_data.py`:
+
+```python
+# Add your new dimensions to the column map
+WHR_COLUMN_MAP = {
+    # Existing PERMA+H
+    "positive affect":                    "P_positive_emotion",
+    "freedom to make life choices":       "E_engagement_autonomy",
+    # ... existing mappings ...
+    
+    # NEW: Add custom dimensions
+    "environmental quality":              "N_nature",           # N for Nature
+    "civic engagement":                   "C_community",        # C for Civic
+    "work-life balance":                  "W_work_balance",    # W for Work
+}
+
+# Update the target columns list
+PERMA_COLS = [
+    "P_positive_emotion",
+    "E_engagement_autonomy",
+    "R_relationships",
+    "M_meaning_life_sat",
+    "A_accomplishment_gdp",
+    "H_health",
+    "N_nature",          # NEW
+    "C_community",       # NEW
+    "W_work_balance",    # NEW
+]
+```
+
+### Step 2: Update Display Labels
+
+Add human-readable labels for visualizations in `02_analyze_wellbeing_f.py`:
+
+```python
+PERMA_LABELS = {
+    # Existing labels...
+    "P_positive_emotion":    "P  Positive emotion\n(Positive affect)",
+    # ... 
+    
+    # NEW labels
+    "N_nature":              "N  Nature\n(Environmental quality)",
+    "C_community":           "C  Community\n(Civic engagement)",
+    "W_work_balance":        "W  Work-Life Balance\n(Work satisfaction)",
+}
+
+SHORT_LABELS = {
+    # ... existing ...
+    "N_nature":              "N: Nature",
+    "C_community":           "C: Community",
+    "W_work_balance":        "W: Work-Life",
+}
+
+# Add colors for plotting
+PALETTE = {
+    # ... existing ...
+    "N_nature":              "#27AE60",  # Green
+    "C_community":           "#8E44AD",  # Purple
+    "W_work_balance":        "#F39C12",  # Orange
+}
+```
+
+### Step 3: Verify Data Availability
+
+Check which countries have data for new dimensions:
+
+```python
+import pandas as pd
+df = pd.read_csv('wellbeing_data/wellbeing_merged.csv')
+
+for col in ["N_nature", "C_community", "W_work_balance"]:
+    missing = df[col].isna().sum()
+    pct = 100 * missing / len(df)
+    print(f"{col}: {missing} missing ({pct:.1f}%)")
+```
+
+**Expected output:**
+```
+N_nature: 89 missing (64.9%)
+C_community: 12 missing (8.8%)
+W_work_balance: 99 missing (72.3%)
+```
+
+<Warning>
+If > 30% of data is missing for a dimension, consider:
+1. Using a different data source (e.g., OECD BLI has work-life balance)
+2. Restricting analysis to countries with complete data
+3. Imputation (not recommended for exploratory f-factor analysis)
+</Warning>
+
+### Step 4: Run Analysis with Extended Dimensions
+
+```bash
+python 01_download_wellbeing_data.py  # Re-download with new mappings
+python 02_analyze_wellbeing_f.py      # PCA will now include 9 dimensions
+```
+
+**Expected changes:**
+- PC1 variance may decrease (more dimensions → more variance to explain)
+- Scree plot will show 9 components instead of 6
+- New loadings will appear in factor loading chart
+
+## Custom Coupling Matrices
+
+### Theory: Mutualism Model Dynamics
+
+The mutualism system evolves according to:
+
+```
+dx_k/dt = a_k · x_k · (1 - x_k/C_k + Σ_{l≠k} M_kl · x_l / C_k)
+```
+
+Where **M_kl = coupling strength** between dimensions k and l.
+
+### Default Calibration (Data-Driven)
+
+By default, `03_models_full_f.py` estimates M from partial correlations:
+
+```python
+# From calibrate_mutualism_from_data() in 03_models_full_f.py:543
+R = np.corrcoef(X_std.T)         # Zero-order correlations
+P = inv(R)                        # Precision matrix
+partial_corr = -P / np.outer(D, D)  # Partial correlations
+
+# Scale to positive coupling range [0.05, 0.3]
+M = np.abs(partial_corr)
+M = 0.05 + 0.25 * (M - M.min()) / (M.max() - M.min() + 1e-8)
+np.fill_diagonal(M, 0.0)
+```
+
+### Theory-Driven Custom Matrix
+
+Replace with a theoretically-specified coupling structure:
+
+```python
+def build_custom_coupling_matrix(K: int) -> np.ndarray:
+    """
+    Example: Strong within-domain, weak between-domain coupling.
+    
+    Theory: PERMA+H has three clusters:
+    - Hedonic: P, M (emotion + meaning)
+    - Eudaimonic: E, A (engagement + accomplishment)
+    - Relational: R, H (relationships + health)
+    
+    Hypothesis: Within-cluster coupling = 0.30, between-cluster = 0.10
+    """
+    M = np.full((K, K), 0.10)  # Baseline: weak coupling everywhere
+    
+    # Strong within-cluster coupling
+    hedonic = [0, 3]           # P, M indices
+    eudaimonic = [1, 4]        # E, A indices
+    relational = [2, 5]        # R, H indices
+    
+    for cluster in [hedonic, eudaimonic, relational]:
+        for i in cluster:
+            for j in cluster:
+                if i != j:
+                    M[i, j] = 0.30
+    
+    np.fill_diagonal(M, 0.0)   # No self-coupling
+    return M
+
+# Usage in script 03
+K = len(cols)
+M_custom = build_custom_coupling_matrix(K)
+sys = MutualismSystem(K, a=a, C=C, M=M_custom)
+```
+
+### Asymmetric Coupling (Advanced)
+
+Test directional hypotheses (e.g., "Health supports Emotion more than vice versa"):
+
+```python
+def build_asymmetric_coupling(K: int) -> np.ndarray:
+    """
+    Example: Health → Positive Emotion coupling = 0.40
+             Positive Emotion → Health coupling = 0.20
+    """
+    M = np.full((K, K), 0.15)  # Baseline symmetric
+    
+    # Indices: [P, E, R, M, A, H]
+    P_idx, H_idx = 0, 5
+    
+    M[P_idx, H_idx] = 0.20  # P → H (emotion helps health, weak)
+    M[H_idx, P_idx] = 0.40  # H → P (health enables emotion, strong)
+    
+    np.fill_diagonal(M, 0.0)
+    return M
+```
+
+**Validation:** Check if asymmetric coupling better predicts empirical partial correlations:
+
+```python
+# Fit both models
+sys_symmetric = MutualismSystem(K, a=a, C=C, M=M_symmetric)
+sys_asymmetric = MutualismSystem(K, a=a, C=C, M=M_asymmetric)
+
+# Simulate populations
+eq_sym = sys_symmetric.simulate_population(n_individuals=200)
+eq_asym = sys_asymmetric.simulate_population(n_individuals=200)
+
+# Compare to empirical correlations
+R_empirical = np.corrcoef(X_scaled.T)
+R_sym = np.corrcoef(eq_sym.T)
+R_asym = np.corrcoef(eq_asym.T)
+
+# Frobenius norm (lower = better fit)
+error_sym = np.linalg.norm(R_empirical - R_sym, 'fro')
+error_asym = np.linalg.norm(R_empirical - R_asym, 'fro')
+
+print(f"Symmetric model error: {error_sym:.3f}")
+print(f"Asymmetric model error: {error_asym:.3f}")
+```
+
+## Alternative Bifactor Structures
+
+### Default: Three-Group Model
+
+From `03_models_full_f.py`:
+
+```python
+BIFACTOR_GROUPS = {
+    "hedonic":         ["P_positive_emotion", "M_meaning_life_sat"],
+    "eudaimonic":      ["E_engagement_autonomy", "A_accomplishment_gdp"],
+    "social_physical": ["R_relationships", "H_health"],
+}
+```
+
+### Two-Group Model (Hedonic vs Eudaimonic)
+
+Replicate Keyes' original Mental Health Continuum structure:
+
+```python
+BIFACTOR_GROUPS = {
+    "emotional":  ["P_positive_emotion", "M_meaning_life_sat"],
+    "functional": ["E_engagement_autonomy", "A_accomplishment_gdp", 
+                   "R_relationships", "H_health"],
+}
+```
+
+### Four-Group Model (Maximum Specificity)
+
+Separate all conceptually distinct domains:
+
+```python
+BIFACTOR_GROUPS = {
+    "affect":         ["P_positive_emotion"],
+    "meaning":        ["M_meaning_life_sat"],
+    "agency":         ["E_engagement_autonomy", "A_accomplishment_gdp"],
+    "social_health": ["R_relationships", "H_health"],
+}
+```
+
+<Note>
+**Model comparison:** Use BIC or AIC to select best structure:
+
+```python
+# After fitting each bifactor model
+bic_2group = N * result_2g["F_min"] + n_params_2g * np.log(N)
+bic_3group = N * result_3g["F_min"] + n_params_3g * np.log(N)
+bic_4group = N * result_4g["F_min"] + n_params_4g * np.log(N)
+
+print(f"BIC 2-group: {bic_2group:.1f}")
+print(f"BIC 3-group: {bic_3group:.1f}")
+print(f"BIC 4-group: {bic_4group:.1f}")
+print(f"Best model: {['2-group','3-group','4-group'][np.argmin([bic_2group, bic_3group, bic_4group])]}")
+```
+</Note>
+
+### Nested Factor Model (No Specifics)
+
+Test a pure unidimensional model (f only, no domain specifics):
+
+```python
+# Remove specific factors
+BIFACTOR_GROUPS = {}  # Empty dict = no specific factors
+
+# This reduces to a standard single-factor CFA
+# Compare omega_h: Will be lower without specifics (all variance is f + error)
+```
+
+## Using Alternative Data Sources
+
+### OECD Better Life Index (Country-Level)
+
+Already included in script 01, but you can expand coverage:
+
+```python
+# In 01_download_wellbeing_data.py, add more OECD indicators:
+OECD_INDICATOR_MAP = {
+    "Life satisfaction":      "oecd_life_satisfaction",
+    "Community":              "oecd_community",
+    # NEW indicators:
+    "Environmental quality":  "oecd_environment",
+    "Civic engagement":       "oecd_civic",
+    "Housing":                "oecd_housing",
+}
+```
+
+OECD BLI has **11 dimensions**. Map them to PERMA+H or extend the schema.
+
+### Gallup World Poll (Individual-Level)
+
+**Access:** Restricted (requires institutional license via Gallup).
+
+**Structure:**
+```python
+# Gallup codebook → PERMA+H mapping
+GALLUP_PERMA_MAP = {
+    "WP16":  "P_positive_emotion",     # Enjoyment yesterday (0/1)
+    "WP18":  "P_negative_emotion",     # Worry yesterday (reverse)
+    "WP23":  "M_meaning_life_sat",     # Life satisfaction (0-10)
+    "WP30":  "R_relationships",        # Social support (0/1)
+    "WP71":  "E_engagement_autonomy",  # Learned something (0/1)
+    "WP125": "H_health",               # Health problems (reverse)
+}
+
+# Load Gallup microdata
+df_gallup = pd.read_stata('gallup_world_poll_2023.dta')
+
+# Recode binary items (0/1 → 0-10 scale for compatibility)
+for item in ["WP16", "WP30", "WP71"]:
+    df_gallup[item] = df_gallup[item].map({1: 10, 0: 0})
+```
+
+**Advantages:**
+- Individual-level (avoids ecological fallacy)
+- Longitudinal (track within-person f dynamics)
+- Large N (~150,000/year across 150 countries)
+
+**Run individual-level analysis:**
+```python
+# Adapt 04_individual_level_f_analysis.py for Gallup
+df_clean, X_scaled, present = preprocess(df_gallup)
+df_scored, fig_scree, fig_load, var_ratio = run_pca_and_plot(X_scaled, present, df_clean)
+```
+
+### European Social Survey (ESS)
+
+**Access:** Free at [https://www.europeansocialsurvey.org/](https://www.europeansocialsurvey.org/)
+
+**PERMA+H mapping:**
+```python
+ESS_PERMA_MAP = {
+    "happy":   "P_positive_emotion",    # How happy are you (0-10)
+    "sclact":  "E_engagement_autonomy", # Take part in social activities (1-6)
+    "sclmeet": "R_relationships",       # Social meetings (1-7)
+    "health":  "H_health",              # Subjective health (1-5, reverse)
+    "stflife": "M_meaning_life_sat",    # Life satisfaction (0-10)
+}
+
+# ESS data is pooled across countries → add country f-scores
+df_ess = pd.read_stata('ESS_Round10.dta')
+df_ess['country'] = df_ess['cntry']  # ISO country codes
+```
+
+### Creating Custom Data Loaders
+
+Template for adding a new source:
+
+```python
+# In 01_download_wellbeing_data.py
+
+def download_custom_source() -> pd.DataFrame:
+    """
+    Template for custom data source integration.
+    
+    Replace with your data loading logic:
+    - API calls (requests.get)
+    - Local file parsing (pd.read_csv, pd.read_excel)
+    - Web scraping (BeautifulSoup)
+    """
+    print("\n⬇  Custom Data Source …", end=" ", flush=True)
+    
+    # Example: Load from local CSV
+    df = pd.read_csv("path/to/custom_data.csv")
+    
+    # Standardize column names
+    df.columns = [c.lower().strip() for c in df.columns]
+    
+    # Map to PERMA+H schema
+    rename_map = {
+        "happiness_score":    "P_positive_emotion",
+        "life_purpose":       "M_meaning_life_sat",
+        "social_connections": "R_relationships",
+        # ... your mappings ...
+    }
+    df = df.rename(columns=rename_map)
+    
+    print(f"done. ({len(df)} rows)")
+    return df
+
+# Add to main() pipeline
+def main():
+    # ... existing downloads ...
+    
+    # 4. Custom source
+    custom = download_custom_source()
+    
+    # 5. Merge with others
+    merged = merge_sources(whr, bli, wb, custom)  # Update merge function
+```
+
+## Modifying Threshold Logic (Model 4)
+
+### Default: 25th Percentile Thresholds
+
+From `03_models_full_f.py`:
+
+```python
+def compute_capabilities_adjusted_f(df, X_raw, f_scores, cols,
+                                    threshold_quantile=0.25):
+    thresholds = np.quantile(X_raw, threshold_quantile, axis=0)
+    above_threshold = X_raw >= thresholds[np.newaxis, :]
+    nussbaum_pass = above_threshold.all(axis=1).astype(float)
+```
+
+### Capability-Specific Absolute Thresholds
+
+Nussbaum's capability approach uses **absolute** (not relative) thresholds:
+
+```python
+def compute_nussbaum_absolute_thresholds(X_raw, cols):
+    """
+    Theory-driven absolute thresholds for each PERMA+H dimension.
+    
+    Based on:
+    - Nussbaum (2011): "Creating Capabilities"
+    - Alkire & Santos (2014): MPI thresholds
+    - Stiglitz-Sen-Fitoussi Commission recommendations
+    """
+    thresholds = {}
+    
+    # P: Positive emotion (0-10 affect scale)
+    thresholds["P_positive_emotion"] = 5.0  # Below neutral = deprived
+    
+    # E: Engagement/autonomy (0-10 freedom scale)
+    thresholds["E_engagement_autonomy"] = 6.0  # Basic self-direction
+    
+    # R: Relationships (0-10 social support scale)
+    thresholds["R_relationships"] = 5.0  # Has at least one person to count on
+    
+    # M: Meaning (0-10 Cantril ladder)
+    thresholds["M_meaning_life_sat"] = 5.0  # Midpoint = minimal acceptability
+    
+    # A: Accomplishment (log GDP per capita)
+    thresholds["A_accomplishment_gdp"] = 8.5  # ~$5,000/year (basic needs)
+    
+    # H: Health (healthy life expectancy, years)
+    thresholds["H_health"] = 60.0  # WHO global average
+    
+    # Convert dict to array in column order
+    return np.array([thresholds[c] for c in cols])
+
+# Replace in compute_capabilities_adjusted_f
+thresholds = compute_nussbaum_absolute_thresholds(X_raw, cols)
+```
+
+### Multiple Deprivation Cutoffs (Alkire-Foster)
+
+Default uses k=1/3 (deprived if failing ≥33% of dimensions). Test sensitivity:
+
+```python
+cutoffs = [0.2, 0.33, 0.5]  # 20%, 33%, 50% thresholds
+results = {}
+
+for k in cutoffs:
+    af_cutoff = k
+    identified = (deprivation_score >= af_cutoff).astype(float)
+    censored_score = deprivation_score * identified
+    
+    H = identified.mean()
+    A = censored_score[identified == 1].mean() if identified.sum() > 0 else 0
+    M0 = H * A
+    
+    results[k] = {"H": H, "A": A, "M0": M0}
+
+# Plot sensitivity
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots()
+ax.plot(cutoffs, [results[k]["M0"] for k in cutoffs], 'o-', lw=2)
+ax.set_xlabel("Deprivation cutoff k")
+ax.set_ylabel("Adjusted headcount ratio M₀")
+ax.set_title("Sensitivity of M₀ to Cutoff Choice")
+```
+
+## Code Structure Overview
+
+### Script Organization
+
+```
+01_download_wellbeing_data.py       (~415 lines)
+├── download_whr()                 # World Happiness Report
+├── parse_whr()                    # Column mapping
+├── download_oecd_bli()            # OECD Better Life Index
+├── parse_oecd_bli()               # Pivot long→wide
+├── download_world_bank()          # WB API calls
+└── merge_sources()                # Fuzzy country name matching
+
+02_analyze_wellbeing_f.py          (~733 lines)
+├── load_data()                    # Load merged CSV
+├── plot_correlation_matrix()      # Positive manifold test
+├── run_pca()                      # Extract f as PC1
+├── bootstrap_loadings()           # 1000-sample CIs
+├── plot_scree()                   # Eigenvalue decomposition
+├── plot_factor_loadings()         # Horizontal bar chart
+├── compute_f_scores()             # Country rankings
+├── plot_country_f_scores()        # Top/bottom 20
+├── plot_scatter_matrix()          # All pairs
+└── plot_coupling_proxy()          # Partial correlations
+
+03_models_full_f.py                (~1400+ lines)
+├── fit_bifactor_cfa()             # Model 1: ML estimation
+├── MutualismSystem class          # Model 2: ODE solver
+│   ├── deterministic_rhs()        # dx/dt = f(x)
+│   ├── jacobian_at_equilibrium()  # ∂ẋ/∂x
+│   └── simulate_population()      # n individuals
+├── lyapunov_analysis()            # Model 3: Stability
+│   ├── solve_continuous_lyapunov()  # J'P + PJ = -Q
+│   └── eigenvalues (check Re < 0)
+├── compute_capabilities_adjusted_f()  # Model 4: Nussbaum
+│   ├── threshold_quantile logic
+│   ├── Alkire-Foster scoring
+│   └── f_cap = f · indicator · h(Q)
+└── coupling_sweep()               # Optimal M̄ prediction
+
+04_individual_level_f_analysis.py  (~933 lines)
+├── generate_synthetic_midus()     # Simulate MIDUS-like data
+├── load_midus()                   # Parse ICPSR .tsv
+├── preprocess()                   # Standardize, drop missing
+├── run_pca_and_plot()            # Same as script 02
+├── run_bifactor_cfa()            # semopy integration
+├── plot_demographic_f()          # Age/sex/education violins
+└── plot_f_vs_p()                 # Dual continua test
+```
+
+### Key Functions to Override
+
+**For custom data sources:**
+- `download_*()` functions in script 01
+- `merge_sources()` for integration
+
+**For custom models:**
+- `MutualismSystem.__init__()` for different coupling structures
+- `fit_bifactor_cfa()` for different group specifications
+- `compute_capabilities_adjusted_f()` for alternative threshold logic
+
+**For custom visualizations:**
+- All `plot_*()` functions return `plt.Figure` objects
+- Modify after generation: `fig.axes[0].set_title("Custom Title")`
+- Save in custom formats: `fig.savefig("output.svg", format='svg')`
+
+## Contributing Back
+
+### Reporting Issues
+
+If you find bugs or have questions:
+
+1. **Check existing documentation** (this guide + source code docstrings)
+2. **Create a minimal reproducible example:**
+   ```python
+   import pandas as pd
+   import numpy as np
+   from pathlib import Path
+   
+   # Minimal data that triggers the issue
+   df = pd.DataFrame({...})
+   
+   # Code that fails
+   result = function_that_breaks(df)
+   ```
+3. **Include version information:**
+   ```bash
+   python --version
+   pip list | grep -E "pandas|numpy|scipy|scikit-learn"
+   ```
+
+### Sharing Extensions
+
+If you develop useful extensions:
+
+1. **Document your modifications:**
+   - Why: What hypothesis does this test?
+   - How: Which functions did you change?
+   - Results: Does it improve model fit? (BIC, RMSEA, omega_h)
+
+2. **Create reusable modules:**
+   ```python
+   # custom_couplings.py
+   def theory_X_coupling_matrix(K: int) -> np.ndarray:
+       """Implements coupling structure from Theory X (Author, Year)."""
+       # ... your implementation ...
+       return M
+   ```
+
+3. **Share validation results:**
+   - Does your extension replicate on multiple datasets?
+   - Include effect sizes (not just p-values)
+   - Report model comparison metrics
+
+### Citation
+
+If you use this code in research, cite the original paper:
+
+```bibtex
+@article{vandermaas2024f,
+  title={Toward f: A General Factor of Human Flourishing},
+  author={van der Maas, Han L.J. and others},
+  journal={Journal},
+  year={2024},
+  volume={X},
+  pages={Y-Z}
+}
+```
+
+And acknowledge the implementation:
+
+```
+Analysis conducted using the Flourishing project implementation,
+available at [repository URL]. Code adapted from scripts
+01_download_wellbeing_data.py through 04_individual_level_f_analysis.py.
+```
+
+### Best Practices for Extensions
+
+<AccordionGroup>
+
+<Accordion title="Version Control">
+
+**Create a branch for each extension:**
+```bash
+git checkout -b feature/new-coupling-model
+# ... make changes ...
+git add 03_models_full_f.py
+git commit -m "Add asymmetric coupling option (M_kl ≠ M_lk)"
+```
+
+**Keep main branch reproducible:**
+- Main should always run the paper's original analysis
+- Extensions go in branches or separate scripts
+
+</Accordion>
+
+<Accordion title="Testing">
+
+**Unit tests for new functions:**
+```python
+# test_extensions.py
+import numpy as np
+from custom_couplings import theory_X_coupling_matrix
+
+def test_coupling_symmetry():
+    M = theory_X_coupling_matrix(K=6)
+    assert np.allclose(M, M.T), "Coupling matrix must be symmetric"
+    
+def test_coupling_diagonal():
+    M = theory_X_coupling_matrix(K=6)
+    assert np.allclose(np.diag(M), 0), "Diagonal must be zero (no self-coupling)"
+    
+def test_coupling_positive():
+    M = theory_X_coupling_matrix(K=6)
+    assert np.all(M >= 0), "Mutualism requires non-negative coupling"
+```
+
+**Run tests:**
+```bash
+pytest test_extensions.py -v
+```
+
+</Accordion>
+
+<Accordion title="Documentation">
+
+**Docstrings for new functions (NumPy style):**
+```python
+def custom_threshold_logic(X: np.ndarray, cols: list) -> np.ndarray:
+    """
+    Compute capability thresholds using Theory Y approach.
+    
+    Parameters
+    ----------
+    X : np.ndarray, shape (n_countries, n_dimensions)
+        Raw wellbeing data matrix.
+    cols : list of str
+        Column names in PERMA+H order.
+    
+    Returns
+    -------
+    thresholds : np.ndarray, shape (n_dimensions,)
+        Absolute threshold for each dimension.
+    
+    Notes
+    -----
+    Based on Author et al. (Year) capability framework. Thresholds
+    correspond to "minimally acceptable" functioning levels.
+    
+    Examples
+    --------
+    >>> X = np.random.rand(100, 6) * 10
+    >>> thresholds = custom_threshold_logic(X, PERMA_COLS)
+    >>> print(thresholds)
+    [5.0, 6.0, 5.0, 5.0, 8.5, 60.0]
+    """
+    # ... implementation ...
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+## Performance Optimization
+
+### Speeding Up Bootstrap
+
+Default: 1000 bootstrap resamples (~10 seconds)
+
+**Parallel bootstrap:**
+```python
+from joblib import Parallel, delayed
+from sklearn.decomposition import PCA
+
+def bootstrap_single(X, ref_loadings, seed):
+    np.random.seed(seed)
+    n = X.shape[0]
+    idx = np.random.choice(n, n, replace=True)
+    pca_b = PCA(n_components=1)
+    pca_b.fit(X[idx])
+    l = pca_b.components_[0]
+    if np.dot(l, ref_loadings) < 0:
+        l = -l
+    return l
+
+def bootstrap_loadings_parallel(X, n_boot=1000, n_jobs=-1):
+    ref_loadings = PCA(n_components=1).fit(X).components_[0]
+    
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(bootstrap_single)(X, ref_loadings, seed)
+        for seed in range(n_boot)
+    )
+    
+    return np.array(results)
+
+# Replace in 02_analyze_wellbeing_f.py
+boot_L = bootstrap_loadings_parallel(X, BOOTSTRAP_N, n_jobs=-1)
+```
+
+**Speedup:** ~5-10x faster on multi-core machines.
+
+### Caching Data Downloads
+
+**Use cached files if recent:**
+```python
+# In 01_download_wellbeing_data.py
+from datetime import datetime, timedelta
+
+def download_whr() -> pd.DataFrame:
+    path = DATA_DIR / "WHR2024_raw.csv"
+    
+    # Use cached if < 7 days old
+    if path.exists():
+        age_days = (datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)).days
+        if age_days < 7:
+            print(f"⬇  WHR (cached, {age_days}d old) …", end=" ")
+            df = pd.read_csv(path)
+            print(f"done. ({len(df)} rows)")
+            return df
+    
+    # Otherwise download fresh
+    print("⬇  WHR (downloading) …", end=" ", flush=True)
+    # ... existing download code ...
+```
+
+### Memory-Efficient Individual-Level Analysis
+
+**For large MIDUS samples (n > 10,000):**
+```python
+# Subsample for bootstrap
+def bootstrap_loadings_memeff(X, n_boot=1000, max_sample=5000):
+    if X.shape[0] > max_sample:
+        # Use subsample for each bootstrap (still valid, faster)
+        idx_full = np.arange(X.shape[0])
+        n_sub = max_sample
+    else:
+        n_sub = X.shape[0]
+    
+    ref_loadings = PCA(n_components=1).fit(X[:max_sample]).components_[0]
+    boot_L = np.zeros((n_boot, X.shape[1]))
+    
+    for i in range(n_boot):
+        idx = np.random.choice(X.shape[0], n_sub, replace=True)
+        # ... rest of bootstrap ...
+```
+
+This reduces memory from O(n × n_boot) to O(max_sample × n_boot).

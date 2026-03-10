@@ -1,0 +1,450 @@
+---
+title: "Capabilities-Adjusted Flourishing (f_cap)"
+description: "Non-compensatory wellbeing measurement incorporating Nussbaum capability thresholds and Alkire-Foster multidimensional poverty methods"
+---
+
+## Overview
+
+The capabilities-adjusted flourishing measure (f_cap, Model 4) extends the standard psychometric f-score by incorporating two critical ethical and theoretical considerations:
+
+1. **Non-compensatory assessment**: High achievement in some domains cannot fully compensate for severe deprivation in others
+2. **Capability thresholds**: Below certain thresholds, a dimension fails to support genuine human flourishing
+
+This model synthesizes Nussbaum's capability approach with Alkire-Foster multidimensional poverty measurement.
+
+## The f_cap Formula
+
+```
+f_cap = f(x*) · 1[x*_k ≥ z_k ∀k] · h(Q_i)
+```
+
+**Components:**
+
+<ParamField path="f(x*)" type="float">
+  Standard psychometric f-score (PC1 from PCA or bifactor CFA)
+</ParamField>
+
+<ParamField path="1[x*_k ≥ z_k ∀k]" type="binary">
+  Nussbaum threshold indicator: 1 if ALL domains meet minimum thresholds, 0 otherwise
+</ParamField>
+
+<ParamField path="h(Q_i)" type="float [0,1]">
+  Capability set size proxy — measures balance/diversity across domains
+</ParamField>
+
+<ParamField path="z_k" type="float">
+  Capability threshold for domain k (minimum acceptable level)
+</ParamField>
+
+### Why Multiplicative?
+
+The multiplicative composition ensures:
+- **Any threshold violation** (indicator = 0) → f_cap = 0
+- **Imbalanced capabilities** (low h) → substantial penalty
+- **Both high f AND threshold compliance AND balance** required for high f_cap
+
+## Nussbaum Capability Thresholds
+
+### Setting Thresholds
+
+Thresholds z_k represent **minimum acceptable levels** for genuine flourishing. The model sets:
+
+```python
+z_k = quantile(x_k, threshold_quantile)
+```
+
+Typically `threshold_quantile = 0.25` (25th percentile).
+
+**Interpretation:**
+- Below z_k → **Capability deprivation** in domain k
+- At or above z_k → **Minimally sufficient** capability
+
+### Philosophical Foundation
+
+**Nussbaum's capabilities approach** argues that certain functionings are **necessary** for human dignity:
+
+- Health below a threshold → cannot flourish, regardless of other domains
+- Relationships below a threshold → social isolation undermines wellbeing
+- Accomplishment below a threshold → lack of agency
+
+The non-compensatory logic: **Excellence in 5 domains cannot compensate for severe deprivation in 1.**
+
+### Threshold Indicator
+
+```python
+above_threshold = X_raw >= thresholds[np.newaxis, :]
+nussbaum_pass = above_threshold.all(axis=1).astype(float)
+```
+
+**Result:**
+- `nussbaum_pass = 1` if x_k ≥ z_k for all k
+- `nussbaum_pass = 0` if any x_k < z_k
+
+This creates a **strict** standard: failing any single dimension disqualifies from full flourishing status.
+
+## Alkire-Foster Multidimensional Deprivation
+
+### Deprivation Indicators
+
+For each individual i and dimension j:
+
+```
+g_ij = 1  if x_ij < z_j  (deprived)
+g_ij = 0  if x_ij ≥ z_j  (not deprived)
+```
+
+### Weighted Deprivation Score
+
+```
+c_i = Σ_j w_j · g_ij
+```
+
+Where w_j are dimension weights (typically equal: w_j = 1/K).
+
+<ParamField path="c_i" type="float [0,1]">
+  Proportion of dimensions in which individual i is deprived
+</ParamField>
+
+### Dual Cutoff Identification
+
+Not all individuals with any deprivation are "multidimensionally poor." The dual cutoff:
+
+```
+ρ_i = 1  if c_i ≥ k  (identified as deprived)
+ρ_i = 0  if c_i < k   (not identified)
+```
+
+Typically k = 1/3 (deprived in at least one-third of dimensions).
+
+<Note>
+This dual cutoff balances inclusiveness (capturing those with multiple deprivations) against over-sensitivity (not flagging everyone with any single small gap).
+</Note>
+
+### Censored Deprivation
+
+Deprivations are "censored" (counted only for identified individuals):
+
+```
+c_i^(k) = c_i  if ρ_i = 1
+c_i^(k) = 0    if ρ_i = 0
+```
+
+### Alkire-Foster Measures
+
+**Headcount (H):**
+```
+H = (1/N) · Σ_i ρ_i
+```
+Proportion identified as deprived.
+
+**Average Intensity (A):**
+```
+A = Σ_i c_i^(k) / Σ_i ρ_i
+```
+Average deprivation score among the deprived.
+
+**Adjusted Headcount Ratio (M₀):**
+```
+M₀ = H × A
+```
+
+Combines breadth (how many) and depth (how severe).
+
+<ParamField path="M₀" type="float [0,1]">
+  Overall multidimensional deprivation index. Higher = worse.
+</ParamField>
+
+### Dimensional Contribution
+
+Each dimension j contributes to M₀:
+
+```
+contribution_j = (1/N) · Σ_i g_ij · ρ_i · w_j
+```
+
+This **decomposes** M₀ by dimension, showing which domains drive overall deprivation.
+
+## Capability Set Size Proxy (h)
+
+### Rationale
+
+Beyond **threshold compliance**, the **balance** across domains matters. Sen's capability approach emphasizes **diverse functionings**.
+
+### Approximation via Coefficient of Variation
+
+For individual i:
+
+```
+CV_i = std(x_i) / mean(x_i)
+```
+
+Normalized balance score:
+```
+h_i = 1 - CV_i / max(CV)
+```
+
+Clipped to [0.01, 1.0].
+
+**Interpretation:**
+- **High h (≈ 1)**: Balanced capabilities — all domains similar
+- **Low h (≈ 0)**: Imbalanced — some domains very high, others low
+
+<Note>
+This is a **proxy** for capability set size. True capability measurement would require identifying all "doable" functionings, which is infeasible. CV provides a practical approximation.
+</Note>
+
+## compute_capabilities_adjusted_f() Function
+
+```python
+def compute_capabilities_adjusted_f(df, X_raw, f_scores, cols,
+                                    threshold_quantile=0.25):
+    """
+    Capability-adjusted flourishing measure (Model 4).
+    
+    Returns DataFrame with f_cap and all intermediate measures.
+    """
+```
+
+<ParamField path="df" type="DataFrame">
+  Data frame with country identifiers (optional, for merging)
+</ParamField>
+
+<ParamField path="X_raw" type="ndarray (N, K)">
+  Observed data matrix (N individuals/countries, K domains)
+</ParamField>
+
+<ParamField path="f_scores" type="ndarray (N,)">
+  Standard f-scores (from PCA or bifactor CFA)
+</ParamField>
+
+<ParamField path="cols" type="list">
+  Domain column names (length K)
+</ParamField>
+
+<ParamField path="threshold_quantile" type="float" default="0.25">
+  Quantile for setting capability thresholds (0.25 = 25th percentile)
+</ParamField>
+
+### Returns
+
+<ResponseField name="result_df" type="DataFrame">
+  DataFrame with per-individual metrics
+</ResponseField>
+
+<ResponseField name="summary" type="dict">
+  Aggregate-level statistics
+</ResponseField>
+
+### result_df Columns
+
+<ResponseField name="f_z" type="float">
+  Standardized f-score (mean 0, std 1)
+</ResponseField>
+
+<ResponseField name="nussbaum_pass" type="binary">
+  1 if all thresholds met, 0 otherwise
+</ResponseField>
+
+<ResponseField name="n_deprived_dims" type="int">
+  Count of dimensions below threshold
+</ResponseField>
+
+<ResponseField name="deprivation_score" type="float">
+  Alkire-Foster c_i (proportion of dimensions deprived)
+</ResponseField>
+
+<ResponseField name="af_identified" type="binary">
+  1 if identified as multidimensionally deprived (c_i ≥ k)
+</ResponseField>
+
+<ResponseField name="capability_h" type="float">
+  Balance/diversity proxy (1 = balanced, 0 = imbalanced)
+</ResponseField>
+
+<ResponseField name="f_cap" type="float">
+  Capability-adjusted flourishing (raw)
+</ResponseField>
+
+<ResponseField name="f_cap_z" type="float">
+  Standardized f_cap (mean 0, std 1)
+</ResponseField>
+
+<ResponseField name="deprived_{col}" type="binary">
+  1 if deprived in dimension {col}, 0 otherwise (one column per domain)
+</ResponseField>
+
+### summary Dictionary
+
+<ResponseField name="thresholds" type="dict">
+  z_k values for each domain
+</ResponseField>
+
+<ResponseField name="H" type="float">
+  Alkire-Foster headcount (proportion identified as deprived)
+</ResponseField>
+
+<ResponseField name="A" type="float">
+  Average intensity among the deprived
+</ResponseField>
+
+<ResponseField name="M0" type="float">
+  Adjusted headcount ratio (H × A)
+</ResponseField>
+
+<ResponseField name="dim_contribution" type="dict">
+  Each dimension's contribution to M₀
+</ResponseField>
+
+## When to Use f_cap Instead of f
+
+### Standard f Appropriate When:
+
+- **Compensatory assumption valid**: Trade-offs between domains acceptable
+- **Relative comparison**: Ranking individuals/countries by overall wellbeing
+- **Continuous variation**: No natural threshold for "sufficient" wellbeing
+- **Psychometric goals**: Testing factor structure, latent variable models
+
+### f_cap Appropriate When:
+
+- **Policy evaluation**: Assessing whether populations meet minimum standards
+- **Ethical frameworks**: Nussbaum/Sen capability approach guides interpretation
+- **Threshold concerns**: Severe deprivation in any domain is unacceptable
+- **Multidimensional poverty**: Analyzing breadth and depth of deprivation
+- **Intervention targeting**: Identifying which dimensions need improvement
+
+<Warning>
+f_cap is **more demanding** than f. Many individuals with moderate f-scores may have f_cap = 0 due to single threshold violations. This is by design — the model reflects a normative stance that flourishing requires minimum sufficiency in all domains.
+</Warning>
+
+## Interpreting f vs f_cap Scatter Plots
+
+### Key Patterns
+
+**Cluster above diagonal (f_cap > f):**
+- Rare — would indicate balanced + threshold-compliant profiles
+- Mostly infeasible due to h ≤ 1 and indicator ≤ 1
+
+**Cluster on diagonal (f_cap ≈ f):**
+- Threshold-compliant + balanced profiles
+- f_cap preserves rank order from f
+
+**Points below diagonal (f_cap < f):**
+- **Moderate gaps**: Imbalance penalty (low h)
+- **Large gaps**: Threshold violations (indicator = 0)
+- Extreme case: f_cap = 0 despite moderate f
+
+### Visual Cues
+
+- **Green points** (nussbaum_pass = 1): Above all thresholds
+- **Red points** (nussbaum_pass = 0): Below ≥1 threshold
+- **Diagonal line** (y = x): Perfect agreement
+
+Large red cluster far below diagonal → many moderate-f individuals fail threshold criteria.
+
+## Dimensional Deprivation Rates
+
+Bar chart showing % deprived per dimension reveals:
+
+- **Which domains** have highest deprivation rates
+- **Inequality across domains** (some easier to achieve than others)
+- **Policy priorities** (focus on dimensions with high deprivation)
+
+**Example interpretation:**
+- Health deprivation: 10% → most countries meet threshold
+- Relationships deprivation: 35% → common gap area
+- Accomplishment deprivation: 25% → moderate concern
+
+## Alkire-Foster Decomposition
+
+Bar chart of dimensional contributions to M₀ shows:
+
+- **Which dimensions drive** overall multidimensional deprivation
+- **Magnitude of contribution** (sum to M₀)
+- **Policy leverage** (large contributors = high-impact intervention targets)
+
+**Example:**
+If "Positive Emotion" contributes 40% of M₀ → substantial room for improvement in affective wellbeing.
+
+## Distribution of Deprivation Breadth
+
+Histogram of n_deprived_dims reveals:
+
+- **How many** have zero deprivations (ideal case)
+- **How many** have multiple deprivations (concern)
+- **Shape**: 
+  - Right-skewed → most people do well
+  - Left-skewed → most people have multiple gaps
+  - Bimodal → two distinct groups
+
+## Relationship with Other Models
+
+### Connection to Bifactor CFA
+
+Both use f as starting point, but:
+- **Bifactor**: Assumes compensatory aggregation
+- **f_cap**: Imposes non-compensatory constraints
+
+High ω_h in bifactor suggests strong general factor, but f_cap may still penalize threshold violations.
+
+### Connection to Mutualism Dynamics
+
+Mutualism equilibrium x* is the input to capabilities analysis:
+- Countries at low equilibrium → likely below thresholds
+- Weak coupling → smaller x* → more threshold violations
+
+f_cap could guide **policy to strengthen coupling** (e.g., programs that build domain synergies).
+
+### Connection to Lyapunov Stability
+
+- **Resilience predicts f_cap persistence**: High-resilience countries less likely to drop below thresholds after shocks
+- **Critical slowing down** → warning that thresholds may be breached
+
+## Limitations and Extensions
+
+### Setting Thresholds
+
+Model uses **relative thresholds** (quantiles). Alternatives:
+- **Absolute thresholds**: Externally defined standards (e.g., UN SDG targets)
+- **Normative consensus**: Expert panels or public deliberation
+- **Empirical optimization**: Maximize predictive validity for outcomes
+
+### Equal Weights
+
+Alkire-Foster uses w_j = 1/K (equal weights). Alternatives:
+- **Differential weights**: Reflect relative importance of dimensions
+- **Endogenous weights**: Derived from data (e.g., factor loadings)
+- **Context-specific weights**: Vary by population or policy goal
+
+### Capability Set Size
+
+CV is a **crude proxy** for true capability set. Better approaches:
+- **Direct elicitation**: Ask individuals about achievable functionings
+- **Revealed preferences**: Infer from choices
+- **Structural models**: Estimate constraints on capability conversion
+
+### Longitudinal Extension
+
+Current model is **cross-sectional**. Time-series extensions:
+- **Chronic vs transient deprivation**: Distinguish persistent gaps from temporary shocks
+- **Threshold exit/entry**: Transition probabilities
+- **Dynamic thresholds**: Adjust z_k over time (rising standards)
+
+## Related Models
+
+- [Bifactor CFA](/models/bifactor-cfa) — Provides the base f-score
+- [Mutualism Dynamics](/models/mutualism-dynamics) — Generates equilibrium values to assess
+- [Lyapunov Stability](/models/lyapunov-stability) — Predicts threshold violation risk
+
+## References
+
+**Source code:** `03_models_full_f.py` lines 920-1104
+
+**Key functions:**
+- `compute_capabilities_adjusted_f()` (lines 924-1021)
+- Nussbaum threshold logic (lines 950-955)
+- Alkire-Foster scoring (lines 957-979)
+- Capability set size proxy (lines 981-988)
+
+**Theoretical foundations:**
+- **Nussbaum, M.** (2011). *Creating Capabilities*. Capability approach, non-compensatory measurement
+- **Alkire, S. & Foster, J.** (2011). Counting and multidimensional poverty measurement. *Journal of Public Economics*. Dual cutoff method, M₀ index

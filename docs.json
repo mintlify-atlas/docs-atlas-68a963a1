@@ -1,122 +1,97 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Flourishing",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#9B59B6",
+    "light": "#BB8FCE",
+    "dark": "#6C3483"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/DanielKetterer/Flourishing"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/DanielKetterer/Flourishing"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/f-factor",
+              "concepts/perma-framework",
+              "concepts/mathematical-models",
+              "concepts/data-sources"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Analysis Pipeline",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "pipeline/data-download",
+              "pipeline/wellbeing-analysis",
+              "pipeline/full-models",
+              "pipeline/individual-level"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Models",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "models/bifactor-cfa",
+              "models/mutualism-dynamics",
+              "models/lyapunov-stability",
+              "models/capabilities-adjusted"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/running-analysis",
+              "guides/interpreting-results",
+              "guides/visualization",
+              "guides/extending-models"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Scripts",
             "pages": [
-              "api-reference/introduction"
+              "api/download-data",
+              "api/analyze-wellbeing",
+              "api/full-models",
+              "api/individual-analysis"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Core Functions",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/data-loading",
+              "api/statistical-methods",
+              "api/plotting",
+              "api/model-calibration"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

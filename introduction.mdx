@@ -1,0 +1,116 @@
+---
+title: Introduction
+description: Understanding the f-factor - a general factor of human flourishing
+---
+
+## What is the f-factor?
+
+The **f-factor** is a general factor of human flourishing that emerges from the positive manifold of wellbeing dimensions. Just as intelligence research identified a general factor *g* underlying cognitive abilities, flourishing research has identified *f* as a general factor underlying multiple dimensions of psychological wellbeing.
+
+This implementation provides computational tools for analyzing and extracting the f-factor from wellbeing data using four complementary mathematical models.
+
+## Theoretical Foundation
+
+The f-factor is grounded in the paper **"Toward f: A General Factor of Human Flourishing"** and builds on the PERMA+H framework:
+
+<CardGroup cols={2}>
+  <Card title="P: Positive Emotion" icon="face-smile">
+    Experiencing joy, contentment, and positive affect
+  </Card>
+  <Card title="E: Engagement" icon="bolt">
+    Being absorbed in activities, autonomy, and personal growth
+  </Card>
+  <Card title="R: Relationships" icon="users">
+    Social connections, support, and positive relations with others
+  </Card>
+  <Card title="M: Meaning" icon="compass">
+    Purpose in life and life satisfaction
+  </Card>
+  <Card title="A: Accomplishment" icon="trophy">
+    Achievement, mastery, and sense of control
+  </Card>
+  <Card title="H: Health" icon="heart-pulse">
+    Physical health and healthy life expectancy
+  </Card>
+</CardGroup>
+
+## The Positive Manifold
+
+The f-factor emerges from the **positive manifold** - the empirical observation that all wellbeing dimensions tend to correlate positively with one another. When someone scores high on one dimension of wellbeing, they tend to score higher on others as well. This pattern suggests an underlying general factor *f*.
+
+<Note>
+  The positive manifold at the country level (ecological correlations) can differ from individual-level patterns. This implementation supports both country-level and individual-level analysis.
+</Note>
+
+## Four Mathematical Models
+
+This implementation provides four complementary approaches to understanding f:
+
+### Model 1: Bifactor CFA
+A confirmatory factor analysis model that decomposes wellbeing into:
+- A general factor *f* loading on all dimensions
+- Domain-specific factors (hedonic, eudaimonic, social-physical)
+- Reports omega hierarchical (ω_h) as the proportion of variance explained by *f*
+
+### Model 2: Mutualism Dynamical System
+A generative model based on coupled logistic growth equations:
+- Demonstrates how positive manifold can emerge from **mutual facilitation** between domains
+- No latent variable required - the correlation structure arises from dynamic interactions
+- Calibrated from observed data to model domain-level coupling
+
+### Model 3: Lyapunov Stability & Resilience
+Analyzes the stability properties of wellbeing equilibria:
+- Computes Jacobian eigenvalues to assess stability
+- Calculates characteristic return time (how quickly wellbeing recovers from perturbations)
+- Quantifies resilience as the basin of attraction depth
+
+### Model 4: Capabilities-Adjusted f (f_cap)
+Incorporates Nussbaum's capabilities approach:
+- Non-compensatory thresholds (deficiency in any dimension matters)
+- Alkire-Foster multidimensional deprivation scoring
+- Adjusts f for capability set size and threshold violations
+
+## Data Sources
+
+The implementation works with two data types:
+
+**Country-level data** (scripts 01-03):
+- World Happiness Report 2024
+- OECD Better Life Index
+- World Bank indicators
+
+**Individual-level data** (script 04):
+- MIDUS 2 (Midlife in the United States) via ICPSR
+- Ryff Psychological Wellbeing Scale (6 dimensions)
+- ~5,000 respondents with longitudinal tracking
+
+<Card title="Learn more about the f-factor" icon="book" href="/concepts/f-factor">
+  Deep dive into the mathematical foundations and theoretical background
+</Card>
+
+## Key Findings
+
+From the country-level analysis:
+- PC1 typically explains **60-75%** of variance in PERMA+H dimensions
+- All pairwise correlations are positive (full positive manifold)
+- Mean inter-dimension correlation: **r ≈ 0.65**
+
+From individual-level analysis (MIDUS 2):
+- PC1 explains **50-55%** of variance (lower than country-level due to within-person variability)
+- Omega hierarchical (ω_h): **0.71-0.86**
+- f and p (psychopathology) show moderate negative correlation but remain distinct dimensions
+
+<Warning>
+  Country-level correlations inflate the apparent strength of f due to aggregation (ecological fallacy). Individual-level data are required to test within-person dynamics.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Extract your first f-factor in under 5 minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Set up Python environment and dependencies
+  </Card>
+</CardGroup>

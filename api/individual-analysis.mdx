@@ -1,0 +1,460 @@
+---
+title: 'individual_level_f_analysis'
+description: 'Individual-level f-factor analysis using Ryff Psychological Wellbeing Scale'
+---
+
+# Individual-Level f-Factor Analysis
+
+Individual-level replication of f-factor analysis using Ryff's Psychological Wellbeing Scale (6 dimensions) from MIDUS 2.
+
+## Why Individual-Level Matters
+
+Country-level analysis works on population averages, producing **ecological correlations**. Individual-level data tests the mutualism model's claims about within-person dynamics: does a person who scores high on Positive Relations *also* score high on Purpose and Self-Acceptance?
+
+## Data: MIDUS 2 (ICPSR 4652)
+
+MIDUS (Midlife in the United States) is the flagship US longitudinal health and wellbeing study.
+
+**Access steps:**
+1. Create free ICPSR account at https://www.icpsr.umich.edu
+2. Navigate to https://www.icpsr.umich.edu/web/NACDA/studies/4652
+3. Download "DS0001: Main Data" in Delimited format
+4. Place .tsv file in: `midus_data/ICPSR_04652-0001-Data.tsv`
+
+**Sample:**
+- N ≈ 4,963 (core sample)
+- 6 Ryff PWB composite scores (pre-constructed)
+- Longitudinal: linkable to MIDUS 1 & 3 via M2ID
+
+## Configuration
+
+### MODE Settings
+
+```python
+MODE = "synthetic"  # Generate synthetic data (no download needed)
+MODE = "midus"      # Parse actual MIDUS 2 data
+MODE = "compare"    # Compare ecological vs individual-level
+```
+
+### Constants
+
+```python
+MIDUS_DATA_PATH = Path("04652-0001-Data.tsv")
+OUTPUT_DIR = Path("wellbeing_figures_individual")
+BOOTSTRAP_N = 1000
+```
+
+### Ryff PWB Variables
+
+```python
+RYFF_COLS = [
+    "B1SPWBA1",  # Autonomy (E: self-direction)
+    "B1SPWBE1",  # Environmental Mastery (A: control)
+    "B1SPWBG1",  # Personal Growth (E: engagement)
+    "B1SPWBR1",  # Positive Relations (R: relationships)
+    "B1SPWBU1",  # Purpose in Life (M: meaning)
+    "B1SPWBS1",  # Self-Acceptance (P: positive self-view)
+]
+```
+
+### PERMA+H Mapping
+
+```python
+RYFF_PERMA = {
+    "B1SPWBA1": "E",   # Engagement / self-direction
+    "B1SPWBE1": "A",   # Accomplishment / mastery
+    "B1SPWBG1": "E",   # Engagement / growth
+    "B1SPWBR1": "R",   # Relationships
+    "B1SPWBU1": "M",   # Meaning / purpose
+    "B1SPWBS1": "P",   # Positive self-view
+}
+```
+
+### Known MIDUS 2 Correlation Matrix
+
+```python
+MIDUS_CORR_MATRIX = np.array([
+    # Auton   Mastery  Growth   PoRel   Purpose  Self-Acc
+    [1.00,    0.47,    0.47,    0.34,    0.44,    0.40],
+    [0.47,    1.00,    0.56,    0.54,    0.65,    0.77],
+    [0.47,    0.56,    1.00,    0.47,    0.60,    0.49],
+    [0.34,    0.54,    0.47,    1.00,    0.52,    0.59],
+    [0.44,    0.65,    0.60,    0.52,    1.00,    0.66],
+    [0.40,    0.77,    0.49,    0.59,    0.66,    1.00],
+])
+```
+
+Source: Springer & Hauser (2006), Lachman et al. (2008)
+
+## Core Functions
+
+### generate_synthetic_midus()
+
+Simulates individual-level MIDUS 2 data matching published psychometric properties.
+
+<ParamField path="n" type="int" default={5000}>
+  Number of individuals to generate
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Synthetic data with Ryff subscales, affect, demographics. Uses Cholesky decomposition to induce known correlation structure.
+
+**Properties:**
+- Means: 4.80–5.53 on 1-7 scale
+- SDs: 0.82–0.97
+- Correlations match MIDUS_CORR_MATRIX
+- Slight ceiling effects (left-skewed distributions)
+- Age gradient (U-shape: midlife dip, later recovery)
+
+**Example:**
+```python
+df = generate_synthetic_midus(n=5000)
+print(df[RYFF_COLS].describe())
+```
+
+---
+
+### load_midus()
+
+Loads MIDUS 2 DS0001 (tab-delimited, ICPSR format).
+
+<ParamField path="path" type="Path" required>
+  Path to ICPSR .tsv file
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Raw MIDUS data with all variables. Handles both .tsv and SPSS-export .dat variants.
+
+**Processing:**
+- Normalizes column names (uppercase, strip spaces)
+- Recodes missing values (-1, ≥90) to NaN
+- Converts 3-item sum scores (3-21) to 1-7 means (÷3)
+
+**Example:**
+```python
+df = load_midus(Path("midus_data/ICPSR_04652-0001-Data.tsv"))
+print(f"Loaded {len(df)} respondents")
+```
+
+---
+
+### preprocess()
+
+Preprocesses data for analysis.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Raw MIDUS DataFrame
+</ParamField>
+
+**Returns:** `tuple[pd.DataFrame, np.ndarray, list]`
+
+- `df_clean` — Complete cases on Ryff subscales
+- `X_scaled` — Standardized data (mean=0, std=1)
+- `present` — List of present column names
+
+**Processing:**
+- Reverse-codes self-rated health (1=excellent→5, 5=poor→1)
+- Drops rows with missing Ryff subscale values
+
+**Example:**
+```python
+df_clean, X_scaled, present = preprocess(df_raw)
+print(f"Complete cases: {len(df_clean):,}")
+```
+
+## Analysis Functions
+
+### report_manifold()
+
+Reports correlation summary statistics.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Clean DataFrame
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Ryff column names
+</ParamField>
+
+<ParamField path="label" type="str" default="">
+  Label for output
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Correlation matrix. Prints summary:
+- Mean r (off-diagonal)
+- Min/max r
+- % positive correlations
+- Strongest/weakest pairs
+
+**Example:**
+```python
+corr = report_manifold(df_clean, RYFF_COLS, label="MIDUS 2")
+print(corr)
+```
+
+---
+
+### run_pca_and_plot()
+
+Runs PCA and creates visualization plots.
+
+<ParamField path="X" type="np.ndarray" required>
+  Standardized data matrix
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="df_clean" type="pd.DataFrame" required>
+  Clean DataFrame for scoring
+</ParamField>
+
+<ParamField path="suffix" type="str" default="">
+  Label suffix for plots
+</ParamField>
+
+**Returns:** `tuple[pd.DataFrame, plt.Figure, plt.Figure, np.ndarray]`
+
+- `df_scored` — DataFrame with f_score column added
+- `fig_scree` — Scree plot
+- `fig_load` — Loadings bar chart
+- `var_ratio` — Variance explained ratios
+
+**Performs:**
+1. PCA with sign fixing
+2. Bootstrap PC1 loadings (1000 iterations, 95% CI)
+3. Creates scree plot (eigenvalues + cumulative variance)
+4. Creates loadings chart with PERMA domain labels
+5. Computes f-scores (standardized PC1)
+
+**Example:**
+```python
+df_scored, fig_scree, fig_load, vr = run_pca_and_plot(
+    X_scaled, RYFF_COLS, df_clean, suffix="MIDUS 2"
+)
+print(f"PC1 explains {vr[0]*100:.1f}%")
+```
+
+---
+
+### run_bifactor_cfa()
+
+Runs bifactor CFA using semopy (if available).
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Clean DataFrame
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Ryff column names
+</ParamField>
+
+**Returns:** `dict | None`
+
+Dictionary with:
+- `omega_h` — Omega hierarchical
+- `omega_t` — Omega total
+- `ecv` — Explained common variance
+
+Returns None if semopy not installed.
+
+**Bifactor structure:**
+- **f** — General factor loading on all 6 subscales
+- **S1** — Hedonic cluster (Self-Acceptance, Env. Mastery)
+- **S2** — Eudaimonic core (Purpose, Personal Growth)
+- **S3** — Social/Autonomous (Positive Relations, Autonomy)
+
+**Example:**
+```python
+result = run_bifactor_cfa(df_clean, RYFF_COLS)
+if result:
+    print(f"omega_h = {result['omega_h']:.3f}")
+    print(f"ECV = {result['ecv']:.3f}")
+```
+
+## Visualization Functions
+
+### plot_corr_heatmap()
+
+Creates correlation matrix heatmap.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Clean DataFrame
+</ParamField>
+
+<ParamField path="cols" type="list" required>
+  Column names
+</ParamField>
+
+<ParamField path="title_suffix" type="str" default="">
+  Suffix for title
+</ParamField>
+
+**Returns:** `plt.Figure`
+
+---
+
+### plot_demographic_f()
+
+Creates violin plots of f-score by demographic subgroups.
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Scored DataFrame with f_score column
+</ParamField>
+
+**Returns:** `plt.Figure`
+
+Three-panel figure:
+1. **Age groups:** 35-44, 45-54, 55-64, 65-74, 75+
+2. **Sex:** Male vs Female (with Cohen's d and p-value)
+3. **Education:** < HS, HS grad, Some college, BA, Grad
+
+Tests whether general factor varies systematically with demographics.
+
+**Example:**
+```python
+fig = plot_demographic_f(df_scored)
+fig.savefig("demographic_f.png")
+```
+
+---
+
+### plot_f_vs_p()
+
+Plots f-score vs negative affect (p-factor proxy).
+
+<ParamField path="df" type="pd.DataFrame" required>
+  DataFrame with f_score and B1SNEGAF columns
+</ParamField>
+
+**Returns:** `plt.Figure | None`
+
+Hexbin plot with marginal distributions. Tests the **dual continua model**: f and p should be correlated but distinct (moderate negative r, with scatter).
+
+**Interpretation:**
+- Shared variance shows overlap
+- Independent variance shows they're distinct dimensions
+
+**Example:**
+```python
+fig = plot_f_vs_p(df_scored)
+if fig:
+    fig.savefig("f_vs_p.png")
+```
+
+---
+
+### compare_ecological_individual()
+
+Compares PC1 variance at country vs individual level.
+
+<ParamField path="country_vr" type="float" required>
+  Country-level PC1 variance ratio
+</ParamField>
+
+<ParamField path="individual_vr" type="float" required>
+  Individual-level PC1 variance ratio
+</ParamField>
+
+**Returns:** `plt.Figure`
+
+Bar chart illustrating **ecological inflation**: country averages inflate apparent strength of f by removing within-group variance (Simpson's paradox).
+
+**Example:**
+```python
+fig = compare_ecological_individual(0.75, 0.52)
+fig.savefig("ecological_comparison.png")
+```
+
+## Auxiliary Variables
+
+### Affect
+
+- **B1SPOSPA** — Positive Affect (1-5 scale, mean of items)
+- **B1SNEGAF** — Negative Affect (1-5 scale, p-factor proxy)
+
+### Life Satisfaction
+
+- **B1SB1** — Overall Life Satisfaction (0-10 scale)
+
+### Health
+
+- **B1SA11W** — Self-rated Health (1=excellent→5=poor, reversed)
+
+### Demographics
+
+- **M2ID** — Respondent ID (links across MIDUS waves)
+- **B1PAGE_M2** — Age
+- **B1PRSEX** — Sex (1=male, 2=female)
+- **B1PF7A** — Education (1-12 ordinal)
+
+## Analyses Performed
+
+1. Descriptive statistics (raw and standardized)
+2. Polychoric / Pearson correlation matrix
+3. Scree plot (PCA)
+4. PC1 factor loadings (f proxy) with bootstrap CIs
+5. Bifactor CFA (omega_h, omega_t, ECV)
+6. f-score distribution (histogram + KDE)
+7. Demographic subgroup f profiles
+8. f vs p correlation (dual continua model)
+
+## Output Files
+
+Figures in `wellbeing_figures_individual/`:
+
+- `indiv_01_correlation_matrix.png`
+- `indiv_02_scree.png`
+- `indiv_03_loadings.png`
+- `indiv_04_f_distribution.png`
+- `indiv_05_demographic_f.png`
+- `indiv_06_f_vs_p.png`
+- `indiv_07_ecological_comparison.png` (MODE="compare" only)
+
+Data:
+- `wellbeing_data/midus_scored.csv` — Individuals with f-scores
+
+## Known MIDUS 2 Benchmarks
+
+From published literature:
+
+- **Cronbach alphas:** 0.70–0.85 (6 subscales)
+- **Inter-subscale correlations:** 0.40–0.77
+- **Highest correlation:** Mastery ↔ Self-Acceptance
+- **Most distinct:** Autonomy (lowest inter-correlations)
+- **Latent correlations:** Up to .95 after removing measurement error (Springer & Hauser, 2006)
+
+## Main Workflow
+
+```python
+def main():
+    # 1. Load/generate data
+    if MODE == "synthetic":
+        df_raw = generate_synthetic_midus(n=5000)
+    else:
+        df_raw = load_midus(MIDUS_DATA_PATH)
+    
+    # 2. Preprocess
+    df_clean, X, present = preprocess(df_raw)
+    
+    # 3. Correlation analysis
+    corr = report_manifold(df_clean, present)
+    
+    # 4. PCA
+    df_scored, fig_scree, fig_load, vr = run_pca_and_plot(X, present, df_clean)
+    
+    # 5. Bifactor CFA
+    cfa_results = run_bifactor_cfa(df_clean, present)
+    
+    # 6. Visualizations
+    plot_demographic_f(df_scored)
+    plot_f_vs_p(df_scored)
+    
+    # 7. Save
+    df_scored.to_csv("wellbeing_data/midus_scored.csv", index=False)
+```

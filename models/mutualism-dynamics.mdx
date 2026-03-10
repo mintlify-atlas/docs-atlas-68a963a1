@@ -1,0 +1,344 @@
+---
+title: "Mutualism Dynamics Model"
+description: "Coupled logistic growth model demonstrating how positive manifold emerges from mutual support without requiring a latent variable"
+---
+
+## Overview
+
+The mutualism dynamics model (Model 2) provides a **generative mechanism** for the positive manifold observed in wellbeing data. Unlike the bifactor CFA which assumes a latent general factor, mutualism shows how **direct mutual support** between domains produces correlated growth patterns without any hidden common cause.
+
+<Note>
+This is a crucial theoretical insight: the positive manifold in wellbeing data does not require a latent variable explanation. It can emerge naturally from mutual reinforcement dynamics.
+</Note>
+
+## The Mutualism Equations
+
+### Coupled Logistic Growth
+
+Each wellbeing domain k evolves according to:
+
+```
+dx_k/dt = a_k · x_k · (1 - x_k/C_k + Σ_{l≠k} M_kl · x_l / C_k) + σ_k · ξ_k(t)
+```
+
+**Parameters:**
+
+<ParamField path="x_k" type="float">
+  Current level of wellbeing domain k (e.g., positive emotion, relationships)
+</ParamField>
+
+<ParamField path="a_k" type="float">
+  Intrinsic growth rate for domain k (typical value: 0.5)
+</ParamField>
+
+<ParamField path="C_k" type="float">
+  Carrying capacity — baseline level achievable without mutual support
+</ParamField>
+
+<ParamField path="M_kl" type="float">
+  Mutualistic coupling strength from domain l to domain k (M_kk = 0)
+</ParamField>
+
+<ParamField path="σ_k" type="float">
+  Noise amplitude for stochastic simulations (optional)
+</ParamField>
+
+<ParamField path="ξ_k(t)" type="float">
+  White noise process for stochastic version
+</ParamField>
+
+### Key Insight: Mutualism Term
+
+The term `Σ_{l≠k} M_kl · x_l / C_k` represents **mutual support**:
+- When other domains (l) are high, they **boost** the growth of domain k
+- This creates **positive feedback loops** between domains
+- The coupling matrix M encodes which domains support which others
+
+## Equilibrium Analysis
+
+### Non-Trivial Equilibrium
+
+At equilibrium (dx_k/dt = 0, x_k > 0), the growth equation reduces to:
+
+```
+1 - x_k/C_k + Σ_{l≠k} M_kl · x_l / C_k = 0
+```
+
+Rearranging:
+```
+x_k = C_k + Σ_{l≠k} M_kl · x_l
+```
+
+### Matrix Form Solution
+
+Define M̃ where M̃_kl = M_kl for k≠l and 0 on diagonal. Then:
+
+```
+(I - M̃) x* = C
+x* = (I - M̃)⁻¹ C
+```
+
+**Critical result:** When M has positive entries, `x* > C` for all domains. **Mutualism lifts equilibrium above carrying capacity.**
+
+### Why This Matters
+
+Individuals with higher baseline capacities (larger C) will have higher equilibria across all domains. But the **pattern of correlations** comes from the coupling matrix M, not from a shared latent variable.
+
+## Positive Manifold Without Latent Variables
+
+### Population Simulation
+
+The model demonstrates that a positive manifold emerges when:
+
+1. **Each individual** has slightly different parameters (C_i, a_i, M_i)
+2. **Environmental factors** create correlated perturbations to carrying capacities
+3. **Mutualistic dynamics** amplify these correlations
+
+Result: Population covariance matrix shows all-positive correlations and a dominant first principal component, **even though no latent variable generated the data**.
+
+### Mechanism
+
+```
+Individual differences in C → Different equilibria x* → Population covariance
+                                      ↑
+                              Amplified by M (coupling)
+```
+
+The coupling matrix M acts as a **multiplier** that amplifies small differences in baseline capacities into larger differences in equilibrium outcomes.
+
+## MutualismSystem Class
+
+### Constructor
+
+```python
+class MutualismSystem:
+    def __init__(self, K, a=None, C=None, M=None, sigma=None):
+        """
+        Coupled logistic growth model.
+        
+        Parameters
+        ──────────
+        K     : number of wellbeing domains
+        a     : intrinsic growth rates (K,)
+        C     : carrying capacities (K,)
+        M     : mutualistic coupling matrix (K, K), M_kk = 0
+        sigma : noise amplitudes (K,) for stochastic simulation
+        """
+```
+
+<ParamField path="K" type="int">
+  Number of wellbeing domains (typically 6 for PERMA+H)
+</ParamField>
+
+<ParamField path="a" type="ndarray (K,)" default="np.ones(K) * 0.5">
+  Intrinsic growth rates for each domain
+</ParamField>
+
+<ParamField path="C" type="ndarray (K,)" default="np.ones(K)">
+  Carrying capacities — baseline levels without mutual support
+</ParamField>
+
+<ParamField path="M" type="ndarray (K, K)" default="np.ones((K,K)) * 0.1">
+  Mutualistic coupling matrix (diagonal should be zero)
+</ParamField>
+
+<ParamField path="sigma" type="ndarray (K,)" default="np.ones(K) * 0.05">
+  Noise amplitudes for stochastic version
+</ParamField>
+
+### Core Methods
+
+#### deterministic_rhs()
+
+```python
+def deterministic_rhs(self, t, x):
+    """Right-hand side of the deterministic ODE system."""
+```
+
+Computes dx/dt for use with scipy's `solve_ivp`.
+
+#### find_equilibrium()
+
+```python
+def find_equilibrium(self, x0=None, t_span=(0, 200), t_eval_n=2000):
+    """
+    Find equilibrium analytically and generate trajectory for plotting.
+    Returns the equilibrium vector x* and an ODE solution.
+    """
+```
+
+<ResponseField name="x_star" type="ndarray (K,)">
+  Equilibrium levels for all domains
+</ResponseField>
+
+<ResponseField name="sol" type="OdeResult">
+  Solution object from scipy.integrate.solve_ivp with trajectory data
+</ResponseField>
+
+#### jacobian_at_equilibrium()
+
+```python
+def jacobian_at_equilibrium(self, x_star):
+    """
+    Compute the Jacobian matrix J at equilibrium x*.
+    
+    J_kl = ∂ẋ_k / ∂x_l evaluated at x*.
+    """
+```
+
+For k = l (diagonal):
+```
+J_kk = a_k * (1 - 2x*_k/C_k + Σ_{l≠k} M_kl x*_l / C_k)
+```
+
+For k ≠ l (off-diagonal):
+```
+J_kl = a_k * x*_k * M_kl / C_k
+```
+
+<Note>
+The Jacobian is essential for stability analysis (see [Lyapunov Stability](/models/lyapunov-stability)).
+</Note>
+
+#### simulate_population()
+
+```python
+def simulate_population(self, n_individuals=200, C_var=0.15, 
+                        M_var=0.05, a_var=0.05, seed=42):
+    """
+    Simulate a population of individuals with parameter variation.
+    
+    Returns equilibrium vectors for the population.
+    """
+```
+
+<ParamField path="n_individuals" type="int" default="200">
+  Number of individuals to simulate
+</ParamField>
+
+<ParamField path="C_var" type="float" default="0.15">
+  Standard deviation of log-normal perturbations to carrying capacities
+</ParamField>
+
+<ParamField path="M_var" type="float" default="0.05">
+  Standard deviation of log-normal perturbations to coupling strengths
+</ParamField>
+
+<ParamField path="a_var" type="float" default="0.05">
+  Standard deviation of log-normal perturbations to growth rates
+</ParamField>
+
+<ResponseField name="equilibria" type="ndarray (n_individuals, K)">
+  Matrix of equilibrium values, one row per individual
+</ResponseField>
+
+## Calibration from Data
+
+### calibrate_mutualism_from_data()
+
+```python
+def calibrate_mutualism_from_data(X_raw, cols):
+    """
+    Calibrate mutualism parameters from observed country-level data.
+    
+    Returns a calibrated MutualismSystem.
+    """
+```
+
+**Calibration strategy:**
+
+1. **Carrying capacities (C_k)**: Set to 70% of observed means
+   - Rationale: Mutualism lifts equilibrium above baseline, so x* > C
+
+2. **Coupling matrix (M_kl)**: Derived from partial correlations
+   - Partial correlations proxy **direct** interactions after removing indirect paths
+   - Scaled to range [0.05, 0.3]
+
+3. **Growth rates (a_k)**: Fixed at 0.5
+   - Not identifiable from cross-sectional data
+   - Affects time scale but not equilibrium values
+
+<ParamField path="X_raw" type="ndarray (N, K)">
+  Observed data matrix (N countries/individuals, K domains)
+</ParamField>
+
+<ParamField path="cols" type="list">
+  Column names for the K domains
+</ParamField>
+
+<ResponseField name="sys" type="MutualismSystem">
+  Calibrated system with estimated parameters
+</ResponseField>
+
+## Trajectory Convergence
+
+The deterministic mutualism system exhibits **asymptotic stability**:
+
+- Starting below equilibrium (x_0 < x*) → domains **grow** toward x*
+- Starting above equilibrium (x_0 > x*) → domains **decline** toward x*
+- Convergence is **monotonic** when coupling is moderate
+
+### Visualization
+
+Trajectory plots show:
+- **Dashed lines**: Carrying capacities C_k
+- **Dotted lines**: Equilibrium x*_k
+- **Solid curves**: Time evolution x_k(t)
+
+Key observation: All trajectories converge to x* > C, demonstrating mutualistic lift.
+
+## Mean Coupling Strength
+
+```python
+def mean_coupling_strength(self):
+    """M̄ = 2/(K(K-1)) · Σ_{k<l} M_kl"""
+```
+
+Average coupling over all unique pairs. This scalar summarizes interaction strength:
+- **Low M̄ (< 0.1)**: Weak mutualism, near-independent domains
+- **Moderate M̄ (0.1-0.3)**: Optimal regime with strong f but stable dynamics
+- **High M̄ (> 0.4)**: Risk of instability or runaway cascades
+
+## Key Predictions
+
+### 1. Positive Manifold
+All pairwise correlations positive when M has positive entries.
+
+### 2. Dominant PC1
+First principal component explains large variance (40-60%) even without latent variable.
+
+### 3. Correlation with f
+Higher mean coupling M̄ predicts stronger first principal component.
+
+### 4. Environmental Amplification
+Shared environmental perturbations to C amplified by mutual support dynamics.
+
+## Comparison with Bifactor CFA
+
+| Aspect | Bifactor CFA | Mutualism Model |
+|--------|-------------|----------------|
+| **Nature** | Latent variable model | Dynamical process model |
+| **Mechanism** | Common cause (f) | Mutual reinforcement |
+| **Time** | Cross-sectional | Dynamic (with equilibrium) |
+| **Interpretation** | f as latent trait | f as emergent pattern |
+| **Parameters** | Loadings λ, uniqueness θ | Growth rates a, coupling M, capacities C |
+
+Both models can produce similar covariance structures, but they have different causal interpretations.
+
+## Related Models
+
+- [Bifactor CFA](/models/bifactor-cfa) — Latent variable approach to f-factor
+- [Lyapunov Stability](/models/lyapunov-stability) — Analyzes resilience of mutualism equilibria
+- [Capabilities-Adjusted](/models/capabilities-adjusted) — Threshold-based wellbeing measurement
+
+## References
+
+**Source code:** `03_models_full_f.py` lines 344-634
+
+**Key classes and functions:**
+- `MutualismSystem` class (lines 348-501)
+- `calibrate_mutualism_from_data()` (lines 504-542)
+- `analytical_equilibrium()` method (lines 432-452)
+
+**Theoretical foundation:**
+Van der Maas et al. (2006) network models adapted for wellbeing domains.

@@ -1,97 +1,150 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Flourishing"
+description: "Mathematical models and empirical analysis of the general factor of human flourishing"
 ---
 
-## Setting up
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="Hero Light"
+  style={{ borderRadius: '0.5rem' }}
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="Hero Dark"
+  style={{ borderRadius: '0.5rem' }}
+/>
 
-Get your documentation site up and running in minutes.
+## What is Flourishing?
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+Flourishing is a research implementation exploring the **f-factor**: a general factor of human wellbeing that spans positive emotion, engagement, relationships, meaning, accomplishment, and health (PERMA+H framework).
 
-## Make it yours
+This project implements four mathematical models from the paper "Toward f: A General Factor of Human Flourishing":
 
-Design a docs site that looks great and empowers your users.
+1. **Bifactor CFA** — Confirmatory factor analysis separating general flourishing from domain-specific factors
+2. **Mutualism Dynamics** — Coupled logistic growth showing how positive manifolds emerge without latent variables
+3. **Lyapunov Stability** — Resilience analysis of wellbeing equilibria
+4. **Capabilities-Adjusted f** — Non-compensatory measurement using Nussbaum thresholds
 
-<Columns cols={2}>
+<CardGroup cols={2}>
   <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
   >
-    Edit your docs locally and preview them in real time.
+    Get started analyzing wellbeing data in minutes
   </Card>
   <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
+    title="Understanding f-factor"
+    icon="brain"
+    href="/concepts/f-factor"
   >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+    Learn about the general factor of flourishing
   </Card>
   <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
+    title="Run the Pipeline"
+    icon="chart-line"
+    href="/pipeline/data-download"
   >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
-
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+    Execute the complete analysis workflow
   </Card>
   <Card
-    title="Code samples"
+    title="API Reference"
     icon="code"
-    href="/essentials/code"
+    href="/api/download-data"
   >
-    Add sample code to demonstrate how to use your product.
+    Explore functions and models
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<CardGroup cols={3}>
+  <Card
+    title="Multi-Source Data"
+    icon="database"
+  >
+    Integrates World Happiness Report, OECD Better Life Index, and World Bank indicators
   </Card>
   <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
+    title="Country & Individual"
+    icon="users"
   >
-    Display images and other media.
+    Dual-level analysis from aggregate country data to individual MIDUS responses
   </Card>
   <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
+    title="Four Models"
+    icon="cube"
   >
-    Write once and reuse across your docs.
+    Complete implementation of bifactor, mutualism, stability, and capabilities models
   </Card>
-</Columns>
+  <Card
+    title="Rich Visualizations"
+    icon="chart-scatter"
+  >
+    Correlation matrices, scree plots, factor loadings, and trajectory convergence
+  </Card>
+  <Card
+    title="Bootstrap CIs"
+    icon="arrows-spin"
+  >
+    Statistical robustness through 1000-iteration bootstrap confidence intervals
+  </Card>
+  <Card
+    title="Reproducible"
+    icon="rotate"
+  >
+    Sequential Python scripts designed for transparent, replicable research
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Analysis Pipeline
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Download Data">
+    Acquire wellbeing indicators from WHR, OECD BLI, and World Bank APIs
+  </Step>
+  <Step title="Extract f-Factor">
+    Run PCA to identify the general flourishing factor from country-level data
+  </Step>
+  <Step title="Fit Models">
+    Calibrate bifactor CFA, mutualism dynamics, and stability models
+  </Step>
+  <Step title="Individual Validation">
+    Replicate findings using MIDUS individual-level psychological data
+  </Step>
+</Steps>
+
+## Explore the Models
+
+<CardGroup cols={2}>
+  <Card
+    title="Bifactor CFA"
+    icon="diagram-project"
+    href="/models/bifactor-cfa"
+  >
+    Maximum likelihood factor analysis with omega_h reliability
+  </Card>
+  <Card
+    title="Mutualism Dynamics"
+    icon="arrows-turn-to-dots"
+    href="/models/mutualism-dynamics"
+  >
+    Coupled ODEs showing emergent positive manifold
+  </Card>
+  <Card
+    title="Lyapunov Stability"
+    icon="wave-square"
+    href="/models/lyapunov-stability"
+  >
+    Resilience and basin-of-attraction analysis
+  </Card>
+  <Card
+    title="Capabilities Adjusted"
+    icon="scale-balanced"
+    href="/models/capabilities-adjusted"
+  >
+    Nussbaum thresholds and Alkire-Foster scoring
+  </Card>
+</CardGroup>
